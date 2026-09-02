@@ -1,0 +1,110 @@
+name: Tests
+
+on:
+  push:
+    branches: [ main ]
+    paths-ignore:
+      - '**/Documentation.docc/**'
+  pull_request:
+    branches: [ main ]
+    paths-ignore:
+      - '**/Documentation.docc/**'
+  workflow_dispatch:
+
+jobs:
+  test-macos:
+    name: macOS
+    runs-on: macos-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Setup Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+      
+      - name: Show Swift version
+        run: swift --version
+      
+      - name: Run tests
+        run: swift test
+
+  test-ios:
+    name: iOS
+    runs-on: macos-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Setup Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+      
+      - name: List available simulators
+        run: xcrun simctl list devices available
+      
+      - name: Run tests on iOS Simulator
+        run: |
+          xcodebuild test \
+            -scheme SwiftPackageTemplate-Package \
+            -destination 'platform=iOS Simulator,name=iPhone 16 Pro' \
+            -enableCodeCoverage YES
+
+  test-tvos:
+    name: tvOS
+    runs-on: macos-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Setup Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+      
+      - name: Run tests on tvOS Simulator
+        run: |
+          xcodebuild test \
+            -scheme SwiftPackageTemplate-Package \
+            -destination 'platform=tvOS Simulator,name=Apple TV 4K (3rd generation)' \
+            -enableCodeCoverage YES
+
+  test-watchos:
+    name: watchOS
+    runs-on: macos-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Setup Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+      
+      - name: Run tests on watchOS Simulator
+        run: |
+          xcodebuild test \
+            -scheme SwiftPackageTemplate-Package \
+            -destination 'platform=watchOS Simulator,name=Apple Watch Series 11 (46mm)' \
+            -enableCodeCoverage YES
+
+  test-visionos:
+    name: visionOS
+    runs-on: macos-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Setup Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+      
+      - name: Run tests on visionOS Simulator
+        run: |
+          xcodebuild test \
+            -scheme SwiftPackageTemplate-Package \
+            -destination 'platform=visionOS Simulator,OS=26.1,name=Apple Vision Pro' \
+            -enableCodeCoverage YES
