@@ -1,0 +1,33 @@
+{
+  "originHash" : "556d6d0a2578b5c9b154732b85879815d4475b50455bc62a1d924812c43d6396",
+  "pins" : [
+    {
+      "identity" : "nextcloud-container-manager",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/i2h3/nextcloud-container-manager",
+      "state" : {
+        "revision" : "a9fbad8738e34a4bbb4782f48cee43cedede7ea8",
+        "version" : "2.0.1"
+      }
+    },
+    {
+      "identity" : "rainmaker",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/i2h3/rainmaker",
+      "state" : {
+        "revision" : "6219dd7cca3c948abe91466a3d303b91bb471fa6",
+        "version" : "4.0.0"
+      }
+    },
+    {
+      "identity" : "swift-argument-parser",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/apple/swift-argument-parser",
+      "state" : {
+        "revision" : "6a52f3251125d74daf04fcbd5e6f08a75d074382",
+        "version" : "1.8.2"
+      }
+    }
+  ],
+  "version" : 3
+}

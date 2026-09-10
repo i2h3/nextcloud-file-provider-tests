@@ -1,0 +1,33 @@
+// SPDX-FileCopyrightText: 2026 Iva Horn
+// SPDX-License-Identifier: MIT
+
+import ClientHarness
+import Foundation
+import Testing
+
+///
+/// Records a timing so that the run can report it.
+///
+/// Measurements are attached to the test which took them rather than written to a shared file, so that they travel with the rest of that test's artifacts and cannot be lost when a run is interrupted. The runner collects them afterwards and renders the table.
+///
+enum MetricsRecorder {
+    ///
+    /// Record one measurement.
+    ///
+    /// - Parameters:
+    ///     - measurement: What was measured.
+    ///     - duration: How long it took.
+    ///     - room: The clean room the measurement was taken in.
+    ///     - test: The test which took it.
+    ///     - payloadSize: The size of the payload involved, where meaningful.
+    ///
+    static func record(_ measurement: String, duration: Duration, in room: CleanRoom, test: String, payloadSize: Int64? = nil) {
+        let sample = LatencySample(measurement: measurement, duration: duration, server: room.underTest.description, test: test, payloadSize: payloadSize)
+
+        guard let data = try? JSONEncoder().encode(sample) else {
+            return
+        }
+
+        Attachment.record(data, named: "\(test).\(measurement.replacingOccurrences(of: " ", with: "-"))\(LatencySample.attachmentSuffix)")
+    }
+}

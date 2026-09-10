@@ -4,8 +4,12 @@ You are an experienced software engineer specialized on apps for iOS and macOS w
 
 ## Repository Structure
 
-- `Sources/` contains the Swift source code per target.
-- `Tests/` contains the automated tests per target.
+- `Sources/ClientHarness/` observes and controls the desktop client on this machine: its lifecycle, the File Provider domains it registers, the inspection of those domains, waiting, diagnostics and preflight. It deliberately depends on neither Docker nor a Nextcloud server, which is what keeps its own tests hermetic.
+- `Sources/ServerHarness/` deploys and provisions the Nextcloud servers under test: containers, per-test users, app passwords and fixture content.
+- `Sources/Runner/` is the `tests` executable, the command line entry point which owns the containers and the machine-level client reset around a single test process.
+- `Tests/ClientHarnessTests/` and `Tests/ServerHarnessTests/` are hermetic unit tests of the harness itself.
+- `Tests/FileProviderTests/` holds the end-to-end suites, in `Suites/`, with their shared machinery in `Support/`. They are gated on a live environment and skip themselves without one. `Support/CleanRoom.swift` builds the per-test user, client configuration and File Provider domain; `Support/ServerWorkspace.swift` is the half of it which needs no client.
+- `README.md` is the only prose document of this repository. Machine setup, how to run, artifacts and troubleshooting all live there.
 
 ## Code Style
 
@@ -21,15 +25,20 @@ You are an experienced software engineer specialized on apps for iOS and macOS w
 - Never wrap arguments in func declarations or calls.
 - Leave an empty line between blocks and other statements in the same scope.
 - Instead of declaring multiple values in a single guard-let statement, write one dedicated guard-let statement per value.
-- Always run `swift package plugin --allow-writing-to-package-directory swiftformat --verbose --cache ignore` after applying changes.
+- Always run `swiftformat .` after applying changes. The tool is expected to be installed in the environment; the package does not vend it as a plugin.
 
 ## Testing Instructions
 
-- Run `swift test` in the repository root directory.
+- Run `swift test` in the repository root directory. This runs the hermetic harness tests and must stay green on any Mac, including one without Docker, without the desktop client and without Full Disk Access.
+- The end-to-end suites need deployed servers and a configured client. They are run with `swift run tests` and report themselves as skipped under a bare `swift test`.
+- `swift run tests doctor` reports whether a machine can run the end-to-end suites and what a run would remove, without changing anything.
+- `swift run tests prepare` deploys the servers and leaves them running, so the suites can be started from Xcode with the debugger attached; `swift run tests teardown` removes what it left behind. See the "Running from Xcode" section of the `README.md`.
+- A run is destructive to whatever Nextcloud account is configured on the machine. It asks before removing anything unless `FPT_ALLOW_DESTRUCTIVE=1` is set.
 
 ## Documentation Instructions
 
 - Always check existing documentation comments for validity and update, if necessary.
+- Facts about the desktop client, the File Provider framework or the operating system must be verified against the installed build or the SDK before they are written down, not recalled.
 - Whenever the files and folders within the repository change, update the "Repository Structure" section of this document accordingly.
 - Always check the `./README.md` for validity and update, if necessary.
 - Semantic versioning is used. Report on the impact in this regard after applying changes.
