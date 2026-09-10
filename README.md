@@ -179,14 +179,17 @@ per-test users, the same artifacts. What it does not do is delete the containers
 
 ## What has been measured
 
-Against Nextcloud `latest` on an idle machine:
+Across four servers on one machine, `latest` being 34.0.3 and the derived predecessor 33.0.8:
 
 | Measurement | Plain | With the High Performance Backend |
 | --- | ---: | ---: |
-| Server to client propagation | 9.0–29.0 s | **0.8–0.9 s** |
-| Client to server propagation | 0.26–0.44 s | 0.26–0.44 s |
+| Server to client propagation | 9.0–29.0 s | **0.83–0.87 s** |
+| Client to server propagation | 0.38–1.01 s | 0.26–0.45 s, once 11.1 s |
 | Materialization of 8 MiB | 0.65–0.79 s | 0.65–0.73 s |
 | Building one clean room | 7–15 s | 7–15 s |
+
+The two releases behave the same. Nothing measured here separates 33.0.8 from 34.0.3 beyond the
+noise the numbers already carry, which is the answer one wants from the older half of the matrix.
 
 The one slow number is the client polling for server-side changes, and `notify_push` removes it
 almost entirely — a factor of thirty on the direction which dominates the run time. Both
@@ -194,14 +197,22 @@ configurations are worth testing, because both are deployed in the wild; `--with
 one. Waits for anything the server originates are given three minutes, which is generous against the
 29 s baseline rather than optimistic.
 
-That baseline is worth one caveat. Three runs have produced 9.0 s, 29.0 s and 29.0 s, and the two
-which agree agree to the millisecond. A change landing at a uniformly random point of a fixed polling
-interval would not do that, so the likely explanation is that the measurement is phase-locked: a
-clean room takes about the same time to build every run, so the fixture lands at about the same point
-of the client's polling cycle every run. If so, the figure is a property of this test's timing rather
-than an average a user would experience, and the honest reading of it is an upper bound near the poll
-interval, not a typical delay. Confirming that means varying the delay before the fixture is created
-and watching the number move, which has not been done yet.
+That baseline does not behave like a delay drawn from a polling interval. Five measurements have
+produced 9.0, 29.0, 29.0, 9.2 and 28.8 seconds: two clusters, not a spread. A change landing at a
+uniformly random point of a fixed interval would fill the range between them, so something is
+quantizing it, and the earlier guess that the measurement is simply phase-locked to a clean room
+taking a constant time does not explain two attractors. It is recorded here as an observation rather
+than explained, because the explanation is not known. What can be said is that the figure is a
+property of this suite's timing as much as of the client, and it should be read as an upper bound
+rather than as a delay a user would typically see.
+
+One measurement is unexplained and is written down so that a second sighting is recognisable rather
+than surprising: on `latest+push`, client to server propagation was **11.1 s**, against 0.45 s for
+`33+push` in the same run and 0.26–0.44 s for `latest+push` in every earlier one. Uploading should
+not depend on the push backend at all, since that carries notifications in the other direction. Four
+containers and their Redis sidecars were up at once, so contention is the innocent reading — but it
+does not account for `33+push` being unaffected under the same load. One sample, so it is not yet a
+finding.
 
 An empty file is worth one note: it keeps the `SF_DATALESS` flag after being read, because there was
 never anything to fetch. Only a file with content proves that reading it brought the content down.
@@ -307,8 +318,8 @@ starts. Spike S7 establishes whether that holds up over hundreds of clean rooms.
 | S4 | Does the Full Disk Access grant survive rebuilds of the test binary? | **yes** — the grant follows the application which starts the run, not the ad-hoc-signed test binary. It is also mandatory: see *Machine setup* |
 | S5 | Is the client reset complete — does a second run start clean? | **yes** for the container state; the Keychain part is unproven, because the sandboxed client's items are not visible to the `security` tool |
 | S6 | What is the baseline propagation latency, with and without push? | **measured both ways** — see *What has been measured* |
-| S7 | Does the clean room hold up over hundreds of repetitions? | **holding** at 50 rooms per run — a full matrix run builds one per test case per server and has completed without leaking a user, a domain or a client process. Hundreds is still unproven |
-| S8 | Does switching off the skeleton directory work on every supported release? | **yes** on `latest`, verified by the server provisioning suite; the derived predecessor follows with the first run which includes it |
+| S7 | Does the clean room hold up over hundreds of repetitions? | **holding** at roughly 116 rooms in one run across four servers, with no leaked user, domain or client process. Several hundred is still unproven |
+| S8 | Does switching off the skeleton directory work on every supported release? | **yes** on both halves of the matrix, 34.0.3 and 33.0.8, verified by the server provisioning suite and again by the domain lifecycle one |
 
 ## License
 
