@@ -99,6 +99,36 @@ struct ServerWorkspace {
     }
 
     ///
+    /// Block the desktop client from synchronising for the duration of a body, and let it synchronise again afterwards whatever happens.
+    ///
+    /// The counterpart of ``withServerPaused(_:_:)``, and the one to reach for when the test itself has to keep talking to the server. Suspending the container takes the server away from everybody, so the remote half of a divergence cannot be created while it is suspended; blocking the client leaves the server entirely available to the test and stops only the client from acting on it.
+    ///
+    /// Unblocking on the way out matters more than resuming a container does. A container left frozen announces itself, because the next test cannot reach its server at all. A client left blocked is silent: every later test simply waits for something which is never going to happen.
+    ///
+    /// - Parameters:
+    ///     - body: What to do while the client is not synchronising.
+    ///
+    /// - Returns: Whatever the body returns.
+    ///
+    /// - Throws: Whatever blocking, the body or unblocking raises.
+    ///
+    @discardableResult
+    static func withSynchronisationBlocked<Result>(_ body: () async throws -> Result) async throws -> Result {
+        try await ClientSynchronisation.block()
+
+        do {
+            let result = try await body()
+            try await ClientSynchronisation.unblock()
+
+            return result
+        } catch {
+            try? await ClientSynchronisation.unblock()
+
+            throw error
+        }
+    }
+
+    ///
     /// Write fixture content to a temporary file of a given name, hand it to a body, and remove it afterwards.
     ///
     /// The name matters: Rainmaker's `upload(_:to:force:)` takes the destination **directory** and keeps the local file's name, so the name of this file is the name the item ends up with on the server and, through synchronisation, in the domain.

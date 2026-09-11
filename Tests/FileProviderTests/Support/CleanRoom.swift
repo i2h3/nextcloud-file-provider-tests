@@ -126,6 +126,12 @@ struct CleanRoom {
         do {
             try await DesktopClient.quit()
 
+            // A room always starts synchronising. A test which blocks the client and then fails before unblocking it would otherwise hand the next test a client which never talks to its server, and that failure looks like a timeout rather than like anything to do with blocking.
+            try await ClientSynchronisation.unblock()
+
+            // Turned on before the client is started, so that the extension has it from its first breath. Its log is the only account of what the File Provider was asked to do and what it answered, and the failures worth having it for are the ones nobody thought to enable it for in advance.
+            try await ClientLogging.enableDebugLogging()
+
             // The client is App Sandboxed and cannot be given a configuration directory of its own, so the clean room is made by emptying the one it insists on using. Seeding the File Provider mode into it decides by construction what would otherwise depend on whatever the client defaults to when it finds nothing.
             try? FileManager.default.removeItem(at: ClientPaths.configurationDirectory)
             try ClientConfigurationFile.writeFileProviderModeOnly(to: ClientPaths.configurationFile)
@@ -201,6 +207,7 @@ struct CleanRoom {
         }
 
         try await DesktopClient.quit()
+        try? await ClientSynchronisation.unblock()
         try? await copyClientLogs()
 
         // The configuration goes, so that nothing claims this room's domain any more. The domain directory itself stays until a client starts and reaps it, which the next clean room does on the way in — see ``ClientReset/reapDomainsWithoutAccounts(timeout:)``.
@@ -210,25 +217,61 @@ struct CleanRoom {
     }
 
     ///
-    /// Keep this test's share of the client log, which the next test would otherwise wipe along with the configuration directory.
+    /// Keep this test's share of the logs, which the next test would otherwise wipe along with the configuration directory.
+    ///
+    /// Two logs are kept, because they say different things. The client's own log is the account and the domain lifecycle. The extension's is what the File Provider actually did — every request the system made of it and what it answered — and it is the only account of the side of the conversation the client never sees. It is written per domain into the group container, and a domain outlives its test by no more than the next client start, so it has to be taken now or not at all.
     ///
     /// - Throws: Whatever copying raises.
     ///
     func copyClientLogs() async throws {
-        guard LocalDirectory.exists(ClientPaths.logDirectory) else {
-            return
-        }
-
         let environment = try LiveEnvironment.require()
 
         let destination = environment.artifactsDirectory
             .appending(path: "clean-rooms", directoryHint: .isDirectory)
             .appending(path: user.identifier, directoryHint: .isDirectory)
-            .appending(path: "client-logs", directoryHint: .isDirectory)
 
-        try FileManager.default.createDirectory(at: destination.deletingLastPathComponent(), withIntermediateDirectories: true)
-        try? FileManager.default.removeItem(at: destination)
-        try FileManager.default.copyItem(at: ClientPaths.logDirectory, to: destination)
+        try FileManager.default.createDirectory(at: destination, withIntermediateDirectories: true)
+
+        if LocalDirectory.exists(ClientPaths.logDirectory) {
+            let copy = destination.appending(path: "client-logs", directoryHint: .isDirectory)
+            try? FileManager.default.removeItem(at: copy)
+            try FileManager.default.copyItem(at: ClientPaths.logDirectory, to: copy)
+        }
+
+        try copyExtensionLogs(to: destination.appending(path: "extension-logs", directoryHint: .isDirectory))
+    }
+
+    ///
+    /// Keep the File Provider extension's own log for every domain it has one for.
+    ///
+    /// Only the log directories are taken, never the domain directory around them. That directory also holds the extension's Realm databases, which are open while the extension is running and refuse to be copied — and because a recursive copy of the whole tree reaches them before it reaches `Logs`, taking the lot means taking nothing.
+    ///
+    /// - Parameters:
+    ///     - destination: The directory to collect the logs in.
+    ///
+    /// - Throws: Whatever creating the destination raises. A domain whose log cannot be copied is skipped rather than failing the collection, because a diagnostics bundle missing one log is worth more than no bundle at all.
+    ///
+    private func copyExtensionLogs(to destination: URL) throws {
+        guard LocalDirectory.exists(ClientPaths.extensionLogs) else {
+            return
+        }
+
+        let domains = (try? FileManager.default.contentsOfDirectory(atPath: ClientPaths.extensionLogs.path(percentEncoded: false))) ?? []
+
+        for domain in domains {
+            let logs = ClientPaths.extensionLogs
+                .appending(path: domain, directoryHint: .isDirectory)
+                .appending(path: "Logs", directoryHint: .isDirectory)
+
+            guard LocalDirectory.exists(logs) else {
+                continue
+            }
+
+            let copy = destination.appending(path: domain, directoryHint: .isDirectory)
+            try FileManager.default.createDirectory(at: destination, withIntermediateDirectories: true)
+            try? FileManager.default.removeItem(at: copy)
+            try? FileManager.default.copyItem(at: logs, to: copy)
+        }
     }
 
     ///

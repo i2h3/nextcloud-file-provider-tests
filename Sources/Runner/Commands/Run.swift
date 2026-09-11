@@ -114,6 +114,29 @@ struct Run: AsyncParsableCommand {
         guard result.isSuccess else {
             throw RunError.testsFailed(exitCode: result.exitCode)
         }
+
+        // A test process which matched nothing exits successfully and says so only in a warning, so a mistyped filter otherwise reads as a clean run of the whole suite.
+        guard ranAnyTests(in: artifactsDirectory) else {
+            throw RunError.noTestsRun(filter: filter)
+        }
+    }
+
+    ///
+    /// Whether the test process actually ran anything.
+    ///
+    /// - Parameters:
+    ///     - artifactsDirectory: The directory the test process wrote its report to.
+    ///
+    /// - Returns: `false` only when a report was written and says that no test ran. A missing or unreadable report counts as having run, because failing a green run over a reporting problem would be worse than missing this.
+    ///
+    private func ranAnyTests(in artifactsDirectory: URL) -> Bool {
+        let report = artifactsDirectory.appending(path: "results-swift-testing.xml", directoryHint: .notDirectory)
+
+        guard let contents = try? String(contentsOf: report, encoding: .utf8) else {
+            return true
+        }
+
+        return !contents.contains("tests=\"0\"")
     }
 
     ///

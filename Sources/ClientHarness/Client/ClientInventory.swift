@@ -30,6 +30,13 @@ public struct ClientInventory: Sendable, CustomStringConvertible {
     public let isRunning: Bool
 
     ///
+    /// Whether the client is currently blocked from synchronising.
+    ///
+    /// Reported because a machine left blocked is otherwise indistinguishable from a machine on which everything times out for no visible reason.
+    ///
+    public let isSynchronisationBlocked: Bool
+
+    ///
     /// The state directories which exist and would be removed.
     ///
     public let stateDirectories: [URL]
@@ -38,7 +45,7 @@ public struct ClientInventory: Sendable, CustomStringConvertible {
     /// Whether there is anything at all to remove.
     ///
     public var isEmpty: Bool {
-        accounts.isEmpty && domainDirectories.isEmpty && stateDirectories.isEmpty && !hasKeychainCredentials
+        accounts.isEmpty && domainDirectories.isEmpty && stateDirectories.isEmpty && !hasKeychainCredentials && !isSynchronisationBlocked
     }
 
     public var description: String {
@@ -64,6 +71,10 @@ public struct ClientInventory: Sendable, CustomStringConvertible {
             lines.append("  Keychain: entries of service \"\(ClientPaths.keychainService)\"")
         }
 
+        if isSynchronisationBlocked {
+            lines.append("  Synchronisation is blocked by \"\(ClientSynchronisation.key)\" and would be unblocked.")
+        }
+
         if isRunning {
             lines.append("  The client is currently running and would be quit.")
         }
@@ -80,12 +91,14 @@ public struct ClientInventory: Sendable, CustomStringConvertible {
     ///     - stateDirectories: The state directories which exist.
     ///     - hasKeychainCredentials: Whether the Keychain holds at least one credential of the client.
     ///     - isRunning: Whether the client or its extension is running.
+    ///     - isSynchronisationBlocked: Whether the client is blocked from synchronising.
     ///
-    public init(accounts: [String], domainDirectories: [URL], stateDirectories: [URL], hasKeychainCredentials: Bool, isRunning: Bool) {
+    public init(accounts: [String], domainDirectories: [URL], stateDirectories: [URL], hasKeychainCredentials: Bool, isRunning: Bool, isSynchronisationBlocked: Bool = false) {
         self.accounts = accounts
         self.domainDirectories = domainDirectories
         self.hasKeychainCredentials = hasKeychainCredentials
         self.isRunning = isRunning
+        self.isSynchronisationBlocked = isSynchronisationBlocked
         self.stateDirectories = stateDirectories
     }
 }

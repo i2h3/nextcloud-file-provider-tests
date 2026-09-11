@@ -28,6 +28,7 @@ public enum Preflight {
         await checks.append(clientSignature())
         await checks.append(clientNotarization(isAllowedToBeRejected: allowingUnnotarizedClient))
         checks.append(fullDiskAccess())
+        await checks.append(synchronisationNotBlocked())
         await checks.append(docker())
         checks.append(freeSpace())
 
@@ -135,6 +136,26 @@ public enum Preflight {
                 remedy: "This is unusual. Check that the directory exists and that nothing else has locked it down."
             )
         }
+    }
+
+    ///
+    /// Check that the client is not left blocked from synchronising.
+    ///
+    /// A run which was interrupted while it had blocked the client leaves the value behind, and the next run would then watch every one of its tests time out with nothing to say why. Catching it here turns a whole wasted run into one sentence.
+    ///
+    /// - Returns: The outcome.
+    ///
+    private static func synchronisationNotBlocked() async -> PreflightCheck {
+        guard await ClientSynchronisation.isBlocked() else {
+            return PreflightCheck(subject: "Synchronisation", isSatisfied: true, detail: "not blocked")
+        }
+
+        return PreflightCheck(
+            subject: "Synchronisation",
+            isSatisfied: false,
+            detail: "The desktop client is blocked from synchronising, probably left behind by an interrupted run.",
+            remedy: "Run `swift run tests reset`, or remove the value by hand with `defaults delete \(ClientPaths.fileProviderExtensionBundleIdentifier) \(ClientSynchronisation.key)`."
+        )
     }
 
     ///

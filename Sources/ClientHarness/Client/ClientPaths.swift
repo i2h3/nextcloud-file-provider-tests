@@ -108,6 +108,13 @@ public enum ClientPaths {
     public static let groupContainer = home.appending(path: "Library/Group Containers/\(applicationGroupIdentifier)", directoryHint: .isDirectory)
 
     ///
+    /// Where the File Provider extension writes its own log, one directory per domain.
+    ///
+    /// Not in the extension's container, where its preferences are, but in the group container it shares with the client. Worth knowing because the two are easy to confuse and hold different things.
+    ///
+    public static let extensionLogs = groupContainer.appending(path: "File Provider Domains", directoryHint: .isDirectory)
+
+    ///
     /// The containers of the client's extensions.
     ///
     public static var extensionContainers: [URL] {

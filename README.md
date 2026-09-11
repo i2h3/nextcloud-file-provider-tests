@@ -84,8 +84,12 @@ swift run tests
 ```
 
 ```bash
-swift run tests --tags latest --filter DomainLifecycle
+swift run tests --tags latest --filter DomainLifecycleTests
 ```
+
+`--filter` is a regular expression matched against the name of the test *type*, such as
+`ConflictTests`, not against the name a suite is given for display. A filter which matches nothing
+fails the run rather than reporting a clean pass over an empty suite.
 
 ```bash
 swift run tests doctor
@@ -257,6 +261,13 @@ Each run writes to `.artifacts/<timestamp>/`:
   the other arguments appear in it. It answers "did the run pass", not "which case failed". For that,
   read the console output of the run, or run the suite from Xcode.
 - `attachments/` — diagnostics bundles and recorded measurements.
+- `clean-rooms/<user>/client-logs/` — the desktop client's own log for that test: the account and
+  the domain lifecycle.
+- `clean-rooms/<user>/extension-logs/` — the File Provider extension's log for that test, which is
+  the only account of what the system asked the provider to do and what it answered. Debug level is
+  switched on for every clean room, because the failures worth having it for are the ones nobody
+  thought to enable it for beforehand. A domain's log outlives its test by no more than the next
+  client start, so it is taken at teardown or not at all.
 - `diagnostics/<user>/` — for a failing test: the client log, the server log, the File Provider
   defaults, the relevant part of the unified log, and the enumeration ledger.
 - `metrics.md` — the propagation and materialization timings, which JUnit cannot express.
@@ -288,6 +299,35 @@ Two behaviours of the fixed client shape the harness and are worth knowing befor
    or unauthenticated never does. Such a call is not cancellable, so every wait gives each attempt its
    own deadline and abandons it — see `Deadline` and `Waiter.attemptTimeout`. Without that, a wait
    never reaches its own timeout and the whole run hangs.
+
+3. **Synchronisation can be blocked from outside the client.** Setting the `blockSync` boolean in the
+   File Provider extension's own preferences stops it performing any network input or output: every
+   request the system makes of it which would need the server is refused with
+   `NSFileProviderErrorServerUnreachable`, in both directions. `ClientSynchronisation` writes it with
+   the `defaults` tool, which reaches the extension's sandbox container where a `UserDefaults` suite
+   opened from this process would not.
+
+## Making the two sides disagree
+
+Some behaviour only appears when the client and the server hold different versions of the same file
+at the same time, and arranging that is harder than it sounds: a client which is talking to its
+server does not stay out of date long enough to be caught. There are two ways to produce it, and they
+are not interchangeable.
+
+| Tool | What it stops | Use it for |
+| --- | --- | --- |
+| `ServerWorkspace.withServerPaused` | the whole server, for everybody | outages: the client cannot reach the server, and neither can this suite |
+| `ServerWorkspace.withSynchronisationBlocked` | only the client | conflicts: the suite keeps full use of the server while the client is deaf to it |
+
+Suspending the container cannot produce a conflict, because the remote half of the disagreement has
+to be created through the very server which is suspended. Blocking the client is what the conflict
+suite uses.
+
+A blocked client is dangerous in a way a suspended container is not. A frozen container announces
+itself, because the next test cannot reach its server at all. A blocked client is silent: every later
+test simply waits for something which is never going to happen. So the value is cleared on the way
+out of the scope which set it, again when a clean room is built, and again by a full reset; a machine
+left blocked is reported by `swift run tests doctor` and refused by preflight before a run starts.
 
 ## Troubleshooting
 

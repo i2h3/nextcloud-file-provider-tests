@@ -37,7 +37,8 @@ public enum ClientReset {
             domainDirectories: clientDomainDirectories(),
             stateDirectories: stateDirectories.filter { LocalDirectory.exists($0) },
             hasKeychainCredentials: hasKeychainCredentials(),
-            isRunning: isClientRunning || isProviderRunning
+            isRunning: isClientRunning || isProviderRunning,
+            isSynchronisationBlocked: ClientSynchronisation.isBlocked()
         )
     }
 
@@ -69,6 +70,12 @@ public enum ClientReset {
         }
 
         try await DesktopClient.quit()
+
+        // Unblocked before anything else, because a machine left blocked by an interrupted run would otherwise silently make every test of the next one time out, and nothing about that failure would point here.
+        try await ClientSynchronisation.unblock()
+
+        // Debug logging belongs to a run rather than to the machine, so a reset puts it back. Leaving it on would quietly fill the disk of somebody who only ever wanted their client back.
+        await ClientLogging.disableDebugLogging()
 
         for directory in stateDirectories {
             try? FileManager.default.removeItem(at: directory)
