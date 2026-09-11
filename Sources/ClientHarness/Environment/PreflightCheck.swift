@@ -8,7 +8,7 @@ import Foundation
 ///
 /// A failed check carries the remedy with it. A run which cannot work should say so in its first seconds, in the words of what to do about it, rather than becoming an unexplained timeout half an hour later.
 ///
-public struct PreflightCheck: Sendable, CustomStringConvertible {
+public struct PreflightCheck: Codable, Sendable, CustomStringConvertible {
     ///
     /// What was found.
     ///

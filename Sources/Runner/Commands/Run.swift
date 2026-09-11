@@ -21,7 +21,7 @@ struct Run: AsyncParsableCommand {
     /// Where logs, attachments and reports of this run are collected.
     ///
     @Option(name: .long, help: "Directory to collect logs, attachments and reports in.")
-    var artifacts: String = ".artifacts"
+    var artifacts: String = "Artifacts"
 
     ///
     /// A filter passed on to the test process.
@@ -60,6 +60,18 @@ struct Run: AsyncParsableCommand {
     var withPush = false
 
     ///
+    /// Whether the test process is asked to record its event stream.
+    ///
+    @Flag(name: .long, help: "Do not ask the test process for its event stream. Only needed if a toolchain stops accepting the option, which is not a documented one.")
+    var noEventStream = false
+
+    ///
+    /// Whether a failed run drafts bug reports for what went wrong.
+    ///
+    @Flag(name: .long, help: "Do not draft bug reports for the failures of this run.")
+    var noReport = false
+
+    ///
     /// The releases to deploy.
     ///
     @Option(name: .long, parsing: .upToNextOption, help: "The server releases to run against. Defaults to the current one and the one before it, derived from what `latest` turns out to be.")
@@ -76,6 +88,10 @@ struct Run: AsyncParsableCommand {
 
         let report = await Preflight.checkMachine(allowingUnnotarizedClient: allowDevelopmentClient)
         Console.log(report.description)
+
+        // Written before the servers exist, so that a run which never gets that far still records what it was and what it found. It is rewritten once they do.
+        var manifest = RunManifest(runIdentifier: artifactsDirectory.lastPathComponent, command: describeCommand(), preflight: report)
+        try? manifest.write(into: artifactsDirectory)
 
         guard report.isSatisfied else {
             throw PreflightError(report: report)
@@ -95,12 +111,21 @@ struct Run: AsyncParsableCommand {
 
         let servers = try await ServerMatrix.deploy(tags: tags, includesPush: withPush) { Console.log($0) }
 
+        manifest.servers = servers.map { RunManifestServer($0.descriptor) }
+        try? manifest.write(into: artifactsDirectory)
+
         let result = try await runTests(against: servers.map(\.descriptor), artifactsDirectory: artifactsDirectory)
 
         if !noClientReset {
             try? await DesktopClient.quit()
+
+            // Debug logging belongs to a run, and a run is over. Clearing it only at the start of the next one leaves it on in between, which quietly fills the disk of somebody who has stopped running tests.
+            await ClientLogging.disableDebugLogging()
         }
         await tearDown(servers)
+
+        manifest.finishedAt = Date()
+        try? manifest.write(into: artifactsDirectory)
 
         let summary = MetricsSummary.render(MetricsSummary.samples(in: artifactsDirectory.appending(path: "attachments", directoryHint: .isDirectory)))
         let summaryURL = artifactsDirectory.appending(path: "metrics.md", directoryHint: .notDirectory)
@@ -112,12 +137,45 @@ struct Run: AsyncParsableCommand {
         Console.log("Artifacts: \(artifactsDirectory.path(percentEncoded: false))")
 
         guard result.isSuccess else {
+            draftReports(in: artifactsDirectory)
+
             throw RunError.testsFailed(exitCode: result.exitCode)
         }
 
         // A test process which matched nothing exits successfully and says so only in a warning, so a mistyped filter otherwise reads as a clean run of the whole suite.
         guard ranAnyTests(in: artifactsDirectory) else {
             throw RunError.noTestsRun(filter: filter)
+        }
+    }
+
+    ///
+    /// Draft a bug report for everything which went wrong, if anything did.
+    ///
+    /// Done without being asked, for the same reason the measurements are: the drafts which matter are the ones written on the first run rather than the third, and by the third nobody remembers what the first one ruled out. A failure here is reported and then ignored — a run's result is the thing being reported on, and must never be lost to a problem with the reporting.
+    ///
+    /// - Parameters:
+    ///     - artifactsDirectory: The directory the run wrote to.
+    ///
+    private func draftReports(in artifactsDirectory: URL) {
+        guard !noReport else {
+            return
+        }
+
+        do {
+            let written = try BugReportWriter.write(for: RunEvidence.gather(from: artifactsDirectory))
+
+            guard !written.isEmpty else {
+                return
+            }
+
+            Console.log()
+            Console.log("Drafted \(written.count) bug report\(written.count == 1 ? "" : "s"), to be finished by hand and filed by you:")
+
+            for url in written {
+                Console.log("  \(url.path(percentEncoded: false))")
+            }
+        } catch {
+            Console.log("Could not draft a bug report: \(error)")
         }
     }
 
@@ -195,6 +253,14 @@ struct Run: AsyncParsableCommand {
             arguments += ["--filter", "FileProviderTests"]
         }
 
+        // The xUnit report records one entry per test function, so a test which failed for one server and passed for another appears as a single failure with no way to tell which. The event stream is the only artifact which distinguishes them, and it carries the moment of each failure, which is what ties it to the clean room it happened in. The option is not a documented one, hence the flag to do without it.
+        if !noEventStream {
+            arguments += [
+                "--event-stream-output-path", artifactsDirectory.appending(path: "events.jsonl", directoryHint: .notDirectory).path(percentEncoded: false),
+                "--event-stream-version", "0",
+            ]
+        }
+
         var environment = [
             RunEnvironment.allowDestructiveVariableName: "1",
             RunEnvironment.artifactsDirectoryVariableName: artifactsDirectory.path(percentEncoded: false),
@@ -209,6 +275,23 @@ struct Run: AsyncParsableCommand {
         Console.log("Running the tests against \(servers.map(\.description).joined(separator: ", "))...")
 
         return try await ProcessRunner.runStreamingOutput(URL(filePath: "/usr/bin/swift"), arguments: arguments, environment: environment)
+    }
+
+    ///
+    /// How this run was asked for, for the record.
+    ///
+    /// - Returns: The options which change what a run does, as strings.
+    ///
+    private func describeCommand() -> [String: String] {
+        [
+            "allowDevelopmentClient": String(allowDevelopmentClient),
+            "filter": filter ?? "",
+            "keepContainers": String(keepContainers),
+            "noClientReset": String(noClientReset),
+            "noEventStream": String(noEventStream),
+            "tags": tags.joined(separator: ","),
+            "withPush": String(withPush),
+        ]
     }
 
     ///

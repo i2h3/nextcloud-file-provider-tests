@@ -16,7 +16,7 @@ struct Runner: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "tests",
         abstract: "Run the Nextcloud desktop client File Provider tests against locally deployed servers.",
-        subcommands: [Run.self, Prepare.self, Teardown.self, Doctor.self, Reset.self],
+        subcommands: [Run.self, Report.self, Prepare.self, Teardown.self, Doctor.self, Reset.self],
         defaultSubcommand: Run.self
     )
 }

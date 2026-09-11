@@ -64,5 +64,8 @@ fastlane/test_output
 # macOS
 .DS_Store
 
-# Artifacts of local test runs
-.artifacts/
+# Artifacts of local test runs.
+#
+# Kept out of the repository deliberately and not merely for tidiness: a run's artifacts contain the
+# logs of a client defect which has not been reported yet, and this repository is public.
+Artifacts/

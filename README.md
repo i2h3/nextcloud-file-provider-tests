@@ -37,16 +37,14 @@ else, and a copy elsewhere would not imitate a real installation.
 Also needed:
 
 - Docker Desktop or OrbStack, running.
-- **Full Disk Access** for whichever application starts the run, which in practice is the terminal.
-  Without it `~/Library/CloudStorage` reads as empty rather than as forbidden, and every assertion
-  about a domain becomes a puzzling failure.
-- **Full Disk Access** for whichever application starts the run, followed by a restart of that
-  application, because a privacy grant only applies to a newly launched process. This is not
-  optional and not merely about
-  reading files: without it macOS asks whether the application may access files managed by Nextcloud,
-  suppresses the repeats, and then answers later reads with `Operation not permitted` and no dialog at
-  all. With it, a domain is read silently and a run needs nobody at the keyboard. Preflight checks it
-  by reading a genuinely protected path, so `swift run tests doctor` will tell you.
+- **Full Disk Access** for whichever application starts the run — in practice the terminal — followed
+  by a restart of it, because a privacy grant only applies to a newly launched process. This is not
+  optional, and it is not merely about reading files: without it macOS asks whether the application
+  may access files managed by Nextcloud, suppresses the repeats, and then answers later reads with
+  `Operation not permitted` and no dialog at all. `~/Library/CloudStorage` then reads as empty rather
+  than as forbidden, and every assertion about a domain becomes a puzzling failure. With it, a domain
+  is read silently and a run needs nobody at the keyboard. Preflight checks it by reading a genuinely
+  protected path, so `swift run tests doctor` will tell you.
 - Enough free disk space for container images and materialized fixtures.
 
 A developer machine is explicitly supported for writing and debugging these tests. The destructive
@@ -149,7 +147,7 @@ Xcode cannot deploy the containers, so that half is done first and left running:
 swift run tests prepare --tags latest --allow-development-client
 ```
 
-That resets the client, deploys the servers, writes `.artifacts/session/matrix.json` and prints the
+That resets the client, deploys the servers, writes `Artifacts/session/matrix.json` and prints the
 three variables to set. Open `Package.swift` in Xcode, then Product, Scheme, Edit Scheme, Test,
 Arguments, and add:
 
@@ -254,13 +252,30 @@ selector, a name with no extension, and a 180-character name.
 
 ## Artifacts
 
-Each run writes to `.artifacts/<timestamp>/`:
+Each run writes to `Artifacts/<timestamp>/`. The directory is deliberately not hidden — a run leaves
+real evidence behind and real disk behind it, and neither should be invisible. It is git-ignored, and
+that matters for more than tidiness: a run's logs describe client defects which have not been
+reported yet, and this repository is public.
 
+The directory holds:
+
+- `reports/` — a drafted bug report per failure. See *When a test finds something*.
+- `run.json` — what the run was: the client, the servers and the releases they actually reported, the
+  preflight checks, the flags it was started with, and the machine's time zone. The zone is not
+  incidental — the File Provider extension timestamps its log in local time and never says which,
+  so reading that log later is impossible without it.
+- `events.jsonl` — everything the test process recorded, one event per line. The only artifact which
+  says *which* case of a parameterized test failed and *when*, which is what ties a failure to the
+  clean room it happened in. Written by an undocumented option, so `--no-event-stream` turns it off
+  and a report degrades to the xUnit file without it.
 - `results-swift-testing.xml` — JUnit. One entry per test function with its total duration, which is
   thinner than it sounds: a parameterized test is a single entry, and neither the server release nor
-  the other arguments appear in it. It answers "did the run pass", not "which case failed". For that,
-  read the console output of the run, or run the suite from Xcode.
+  the other arguments appear in it. It answers "did the run pass", not "which case failed".
 - `attachments/` — diagnostics bundles and recorded measurements.
+- `clean-rooms/<user>/room.json` — which test the room belonged to, which server it ran against, and
+  when it began and ended. A room's directory is named after the Nextcloud user it created, and that
+  name has no relation to the name of the test function, so without this nothing on disk connects a
+  failure to the logs which might explain it.
 - `clean-rooms/<user>/client-logs/` — the desktop client's own log for that test: the account and
   the domain lifecycle.
 - `clean-rooms/<user>/extension-logs/` — the File Provider extension's log for that test, which is
@@ -306,6 +321,61 @@ Two behaviours of the fixed client shape the harness and are worth knowing befor
    `NSFileProviderErrorServerUnreachable`, in both directions. `ClientSynchronisation` writes it with
    the `defaults` tool, which reaches the extension's sandbox container where a `UserDefaults` suite
    opened from this process would not.
+
+## When a test finds something
+
+A failing test here is usually a client defect, and the step between noticing that and filing it
+upstream is mostly transcription: which client, which server, which macOS, what was asserted, what
+happened instead. That part is done for you.
+
+A failed run drafts a report per failure into `Artifacts/<run>/reports/`, and `swift run tests report`
+does the same on demand for any run — name it, or leave it out for the most recent one. The document
+follows the bug template of [nextcloud/desktop](https://github.com/nextcloud/desktop) field by field,
+so it is pasted rather than rewritten: what the defect is, how to reproduce it, what was expected,
+what happened instead, which files were affected, the environment, and an excerpt of the File
+Provider extension's own log around the failure.
+
+An existing report is never overwritten without `--force`, because the point of a draft is that
+somebody edits it. A failure the suite already knows about is skipped: it is being watched on purpose
+and is not news.
+
+Every section is filled. There are no blanks to come back to and no headings standing over nothing,
+because a document which is mostly a list of chores teaches its reader to skim.
+
+The description is quoted rather than composed. An expectation in this suite carries a sentence
+saying what must not happen — *"the version written on the server was replaced by the one written
+locally, and nothing was kept of it"* — written by a person when the test was written. That sentence
+is the description, and its first clause is the title, which makes writing a good comment beside an
+expectation the same act as writing a good bug report.
+
+What a run cannot establish is simply absent rather than stubbed. A suspected cause belongs to
+whoever has read the client's source, and a guessed one in a generated document sends a maintainer
+down a path for no reason.
+
+The *Environment* section is worth more than it looks. Alongside the versions it carries every
+preflight check the run made and a sentence on isolation — that tests run one at a time, and that the
+account, its domain and its server user existed for this test alone. That forecloses the first
+alternative explanation anybody reaches for. This project spent two runs eliminating its own harness
+before any of it was written down.
+
+**Nothing is filed for you.** The command drafts; you finish it and post it. That is not politeness:
+the client's own contribution policy requires an issue to be in the contributor's words and forbids
+an agent opening one.
+
+Reports live under `Artifacts/`, which is git-ignored, and the writer refuses to run anywhere the
+repository would pick it up. A draft describes a defect nobody has reported yet and this repository
+is public, so that check is made rather than assumed.
+
+Once an issue exists, wrap the detecting test so the suite goes green while the defect stays covered:
+
+```swift
+withKnownIssue("nextcloud/desktop#12345") {
+    // the assertion which fails
+}
+```
+
+Swift Testing then reports *expected issue did not occur* when the client is fixed, which is how a
+fix upstream reaches this suite without anyone remembering to check.
 
 ## Making the two sides disagree
 

@@ -33,6 +33,8 @@ You are an experienced software engineer specialized on apps for iOS and macOS w
 - The end-to-end suites need deployed servers and a configured client. They are run with `swift run tests` and report themselves as skipped under a bare `swift test`.
 - `swift run tests doctor` reports whether a machine can run the end-to-end suites and what a run would remove, without changing anything.
 - `swift run tests prepare` deploys the servers and leaves them running, so the suites can be started from Xcode with the debugger attached; `swift run tests teardown` removes what it left behind. See the "Running from Xcode" section of the `README.md`.
+- A failed run drafts a bug report per failure into `Artifacts/<run>/reports/`, and `swift run tests report` does the same for any run on demand. Every section is filled from what the run recorded; nothing is left as a placeholder. The drafts are never committed and never filed: read one, then post it yourself.
+- The title of a drafted report is taken from the comment written beside the failing expectation, so writing a good comment there is also writing a good bug title.
 - A run is destructive to whatever Nextcloud account is configured on the machine. It asks before removing anything unless `FPT_ALLOW_DESTRUCTIVE=1` is set.
 
 ## Documentation Instructions

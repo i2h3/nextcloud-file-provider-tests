@@ -21,7 +21,7 @@ struct Teardown: AsyncParsableCommand {
     /// Where the session was recorded.
     ///
     @Option(name: .long, help: "The artifacts directory the session was prepared in.")
-    var artifacts: String = ".artifacts"
+    var artifacts: String = "Artifacts"
 
     ///
     /// Whether the desktop client is left as it is.

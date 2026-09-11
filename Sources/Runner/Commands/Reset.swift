@@ -20,7 +20,7 @@ struct Reset: AsyncParsableCommand {
     /// Where to keep the copy of the configuration which is removed.
     ///
     @Option(name: .long, help: "Directory to keep a copy of the removed configuration in.")
-    var artifacts: String = ".artifacts"
+    var artifacts: String = "Artifacts"
 
     ///
     /// Run the reset.

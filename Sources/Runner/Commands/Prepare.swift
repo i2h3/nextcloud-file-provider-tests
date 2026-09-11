@@ -23,7 +23,7 @@ struct Prepare: AsyncParsableCommand {
     /// Where logs, attachments and reports of the session are collected.
     ///
     @Option(name: .long, help: "Directory to collect logs, attachments and reports in.")
-    var artifacts: String = ".artifacts"
+    var artifacts: String = "Artifacts"
 
     ///
     /// Whether a client the system policy rejects is accepted as the subject.

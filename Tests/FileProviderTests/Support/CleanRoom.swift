@@ -59,6 +59,13 @@ struct CleanRoom {
     let user: TestUser
 
     ///
+    /// What this room is, written beside the logs it leaves behind.
+    ///
+    /// Carried rather than rebuilt at teardown because only the moment the room began is worth recording, and by then it has passed.
+    ///
+    let manifest: RoomManifest
+
+    ///
     /// Build a clean room, run a test in it, and tear it down again.
     ///
     /// Teardown runs whether the body succeeds or fails, and its own failures are raised rather than swallowed: a half-cleaned machine poisons every later test, so it has to be loud.
@@ -123,6 +130,17 @@ struct CleanRoom {
             throw error
         }
 
+        // Written now rather than at teardown, so that a room which never finishes being built still says what it was trying to be. Those are the rooms whose logs matter most.
+        var manifest = RoomManifest(
+            testName: testName,
+            testIdentifier: Test.current?.id.description,
+            testDisplayName: Test.current?.displayName ?? Test.current?.name,
+            user: user.identifier,
+            server: RunManifestServer(underTest)
+        )
+
+        try? manifest.write(into: Self.roomDirectory(of: user.identifier, in: environment))
+
         do {
             try await DesktopClient.quit()
 
@@ -144,6 +162,9 @@ struct CleanRoom {
 
             let domain = try await waitForDomain(besides: knownDomains, ledger: ledger, timeout: environment.scaled(.seconds(120)))
 
+            manifest.domainPath = domain.path(percentEncoded: false)
+            try? manifest.write(into: Self.roomDirectory(of: user.identifier, in: environment))
+
             return CleanRoom(
                 account: account,
                 administration: Server(address: underTest.serverAddress, password: underTest.adminPassword, user: underTest.adminUser),
@@ -151,7 +172,8 @@ struct CleanRoom {
                 ledger: ledger,
                 server: user.client(on: underTest),
                 underTest: underTest,
-                user: user
+                user: user,
+                manifest: manifest
             )
         } catch {
             // A room which fails to build has no teardown to run, so the user it already created would survive the test and make every later run of the same test fail at `user:add` instead of where the trouble actually is. One failure should stay one failure.
@@ -209,11 +231,45 @@ struct CleanRoom {
         try await DesktopClient.quit()
         try? await ClientSynchronisation.unblock()
         try? await copyClientLogs()
+        try? completeManifest()
 
         // The configuration goes, so that nothing claims this room's domain any more. The domain directory itself stays until a client starts and reaps it, which the next clean room does on the way in — see ``ClientReset/reapDomainsWithoutAccounts(timeout:)``.
         try? FileManager.default.removeItem(at: ClientPaths.configurationDirectory)
 
         try await user.delete(on: underTest)
+    }
+
+    ///
+    /// Close this room's record, now that its life is over and its logs have been kept.
+    ///
+    /// The end of the window is what makes the record usable: a failure is attributed to a room by falling inside one, and rooms never overlap.
+    ///
+    /// - Throws: Whatever writing raises.
+    ///
+    private func completeManifest() throws {
+        let environment = try LiveEnvironment.require()
+        let directory = Self.roomDirectory(of: user.identifier, in: environment)
+
+        var completed = manifest
+        completed.endedAt = Date()
+        completed.domainIdentifiers = (try? FileManager.default.contentsOfDirectory(atPath: directory.appending(path: "extension-logs", directoryHint: .isDirectory).path(percentEncoded: false))) ?? []
+
+        try completed.write(into: directory)
+    }
+
+    ///
+    /// Where a clean room's artifacts are collected.
+    ///
+    /// - Parameters:
+    ///     - user: The Nextcloud user the room created, which names its directory.
+    ///     - environment: The run the room belongs to.
+    ///
+    /// - Returns: The directory, which may not exist yet.
+    ///
+    static func roomDirectory(of user: String, in environment: RunEnvironment) -> URL {
+        environment.artifactsDirectory
+            .appending(path: "clean-rooms", directoryHint: .isDirectory)
+            .appending(path: user, directoryHint: .isDirectory)
     }
 
     ///
@@ -226,9 +282,7 @@ struct CleanRoom {
     func copyClientLogs() async throws {
         let environment = try LiveEnvironment.require()
 
-        let destination = environment.artifactsDirectory
-            .appending(path: "clean-rooms", directoryHint: .isDirectory)
-            .appending(path: user.identifier, directoryHint: .isDirectory)
+        let destination = Self.roomDirectory(of: user.identifier, in: environment)
 
         try FileManager.default.createDirectory(at: destination, withIntermediateDirectories: true)
 
