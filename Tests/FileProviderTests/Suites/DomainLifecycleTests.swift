@@ -16,7 +16,7 @@ struct DomainLifecycleTests {
     @Test(arguments: LiveEnvironment.servers)
     func `Configuring an account produces a File Provider domain.`(_ underTest: ServerUnderTest) async throws {
         try await CleanRoom.with(underTest, testName: "DomainLifecycle.domainAppears") { room in
-            #expect(LocalDirectory.exists(room.domain))
+            try #expect(LocalDirectory.exists(room.domain))
             #expect(room.domain.path(percentEncoded: false).hasPrefix(ClientPaths.cloudStorage.path(percentEncoded: false)))
         }
     }
@@ -45,10 +45,10 @@ struct DomainLifecycleTests {
         try await room.tearDown()
 
         // Quitting the client leaves the domain behind. What removes it is a client which starts and finds nothing claiming it, which is why the removal is observed here rather than in the teardown.
-        #expect(LocalDirectory.exists(domain), "The domain should still be there while no client has run since the account was removed.")
+        #expect(try LocalDirectory.exists(domain), "The domain should still be there while no client has run since the account was removed.")
 
         try await ClientReset.reapDomainsWithoutAccounts(timeout: LiveEnvironment.scaled(.seconds(60)))
 
-        #expect(!LocalDirectory.exists(domain), "The domain directory at \(domain.path(percentEncoded: false)) survived a client start without its account.")
+        #expect(try !LocalDirectory.exists(domain), "The domain directory at \(domain.path(percentEncoded: false)) survived a client start without its account.")
     }
 }

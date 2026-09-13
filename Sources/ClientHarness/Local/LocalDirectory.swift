@@ -32,10 +32,11 @@ public enum LocalDirectory {
         let names = try FileManager.default.contentsOfDirectory(atPath: directory.path(percentEncoded: false))
         ledger.record(directory, entryCount: names.count)
 
-        return names
+        return try names
             .filter { includesHiddenEntries || !$0.hasPrefix(".") }
             .sorted()
-            .compactMap { LocalNode.at(directory.appending(path: $0, directoryHint: .inferFromPath)) }
+            // `compactMap` here would drop an entry the system refused to describe, so a child nobody was allowed to stat would vanish from a listing which is then compared against the server. Absence is still dropped; inability now propagates.
+            .compactMap { try LocalNode.at(directory.appending(path: $0, directoryHint: .inferFromPath)) }
     }
 
     ///
@@ -46,7 +47,9 @@ public enum LocalDirectory {
     ///
     /// - Returns: `true` if anything is there.
     ///
-    public static func exists(_ url: URL) -> Bool {
-        LocalNode.at(url) != nil
+    /// - Throws: ``LocalInspectionError`` if the system would not say.
+    ///
+    public static func exists(_ url: URL) throws -> Bool {
+        try LocalNode.at(url) != nil
     }
 }

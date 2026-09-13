@@ -46,6 +46,24 @@ public struct RunManifestServer: Codable, Equatable, Sendable {
     }
 
     ///
+    /// Describe a server directly.
+    ///
+    /// - Parameters:
+    ///     - tag: The image tag it was deployed from.
+    ///     - versionString: The version it reported.
+    ///     - isPushEnabled: Whether it runs the High Performance Backend.
+    ///     - serverAddress: Where it listens.
+    ///     - containerIdentifier: Which container it is.
+    ///
+    public init(tag: String, versionString: String? = nil, isPushEnabled: Bool = false, serverAddress: URL = URL(filePath: "/"), containerIdentifier: String = "") {
+        self.containerIdentifier = containerIdentifier
+        self.isPushEnabled = isPushEnabled
+        self.serverAddress = serverAddress
+        self.tag = tag
+        self.versionString = versionString
+    }
+
+    ///
     /// Describe a server of a run.
     ///
     /// - Parameters:

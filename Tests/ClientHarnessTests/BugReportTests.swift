@@ -127,11 +127,8 @@ struct BugReportTests {
         let report = BugReport(failure: Self.failure, room: nil, manifest: manifest, excerpt: [], omittedLines: 0, logPath: nil, hasCaseAttribution: true)
         let rendered = BugReportRenderer.render(report, runIdentifier: "r")
 
-        let environment = try? #require(rendered.range(of: "## Environment"))
-        let docker = try? #require(rendered.range(of: "| Docker | server 29.4.0 |"))
-
-        #expect(environment != nil)
-        #expect(docker != nil)
+        #expect(rendered.contains("## Environment"))
+        #expect(rendered.contains("| Docker | server 29.4.0 |"))
         #expect(!rendered.contains("rules out"))
     }
 
@@ -222,5 +219,80 @@ struct BugReportTests {
     @Test
     func `A run with no event stream reads as no failures rather than failing.`() {
         #expect(EventStreamReader.failures(in: URL(filePath: "/nowhere/events.jsonl")).isEmpty)
+    }
+
+    ///
+    /// The failure this suite actually produced, and the one a report must not dress up as a finding.
+    ///
+    /// Two conflict tests threw at their very first step, before any conflict could exist, and the run drafted two articulate bug reports about a contract neither of them reached. A test which could not build what it needed has said something about this suite, not about the client.
+    ///
+    @Test
+    func `A test which threw before asserting anything is not reported as a defect.`() {
+        let failure = ReportedFailure(
+            testIdentifier: "FileProviderTests.ConflictTests/paused()",
+            testDisplayName: "A change made while an item was paused does not overwrite a newer server version.",
+            message: "Caught error: Pausing synchronisation of the item failed.",
+            comments: ["The contract itself."],
+            thrownError: "Pausing synchronisation of the item failed (ClientHarness.SyncControlFailure)"
+        )
+
+        let report = BugReport(failure: failure, room: nil, manifest: nil, excerpt: [], omittedLines: 0, logPath: nil, hasCaseAttribution: true)
+
+        #expect(!report.isConclusive)
+
+        let rendered = BugReportRenderer.render(report, runIdentifier: "r")
+
+        #expect(rendered.contains("**Not a bug report.**"))
+
+        // The suite's own documentation standing in as a description of a defect is how the misleading reports read.
+        #expect(!rendered.contains("The contract itself."))
+        #expect(rendered.contains("Pausing synchronisation of the item failed"))
+    }
+
+    ///
+    /// The ordinary case must keep reading the way it did, or the distinction is bought by spoiling the reports that matter.
+    ///
+    @Test
+    func `A contradicted expectation is still reported as a defect.`() {
+        let failure = ReportedFailure(
+            testIdentifier: "FileProviderTests.ConflictTests/advertised()",
+            testDisplayName: "The client says whether it can pause an item.",
+            message: "Expectation failed: supportsPausing(file)",
+            comments: ["The client does not advertise that an item's synchronisation can be paused."]
+        )
+
+        let report = BugReport(failure: failure, room: nil, manifest: nil, excerpt: [], omittedLines: 0, logPath: nil, hasCaseAttribution: true)
+
+        #expect(report.isConclusive)
+
+        let rendered = BugReportRenderer.render(report, runIdentifier: "r")
+
+        #expect(!rendered.contains("**Not a bug report.**"))
+        #expect(rendered.contains("The client does not advertise that an item's synchronisation can be paused."))
+    }
+
+    ///
+    /// The same trap as the thrown-error one, in a different slot and from a different source.
+    ///
+    /// A test in this suite is named for the property that should hold. Printing that name under a heading asking what went wrong states the opposite of what happened — directly above the *Expected behavior* section, which correctly prints the same sentence. Thirty-eight expectations in the live suite carry no written sentence, so this is the ordinary case rather than the rare one.
+    ///
+    @Test
+    func `An expectation with no sentence beside it does not borrow the test's name as the defect.`() {
+        let failure = ReportedFailure(
+            testIdentifier: "FileProviderTests.ServerToClientTests/placeholder()",
+            testDisplayName: "A file created on the server appears in the client as a placeholder.",
+            message: "Expectation failed: placeholder.size == Int64(content.count)"
+        )
+
+        let report = BugReport(failure: failure, room: nil, manifest: nil, excerpt: [], omittedLines: 0, logPath: nil, hasCaseAttribution: true)
+
+        #expect(report.writtenDescription == nil)
+
+        let rendered = BugReportRenderer.render(report, runIdentifier: "r")
+
+        #expect(rendered.contains("No sentence was written beside the expectation"))
+
+        // Once, under "Expected behavior", where it is true. Never as the description of the defect.
+        #expect(rendered.components(separatedBy: "A file created on the server appears in the client as a placeholder.").count - 1 == 1)
     }
 }

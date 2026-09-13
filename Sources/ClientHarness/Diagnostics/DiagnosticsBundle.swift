@@ -36,7 +36,7 @@ public enum DiagnosticsBundle {
             try write(focusReport(focus), to: directory.appending(path: "focus.txt", directoryHint: .notDirectory))
         }
 
-        if let clientLogDirectory, LocalDirectory.exists(clientLogDirectory) {
+        if let clientLogDirectory, (try? LocalDirectory.exists(clientLogDirectory)) == true {
             let destination = directory.appending(path: "client-logs", directoryHint: .isDirectory)
             try? FileManager.default.removeItem(at: destination)
             try? FileManager.default.copyItem(at: clientLogDirectory, to: destination)
@@ -54,7 +54,16 @@ public enum DiagnosticsBundle {
     /// - Returns: The report.
     ///
     private static func focusReport(_ focus: URL) -> String {
-        guard let node = LocalNode.at(focus) else {
+        let found: LocalNode?
+
+        do {
+            found = try LocalNode.at(focus)
+        } catch {
+            // A bundle is collected when things have already gone wrong, so this reports rather than raises — but it reports which of the two answers it got, because "nothing is there" and "the system would not say" send a reader to different places.
+            return "\(error)"
+        }
+
+        guard let node = found else {
             return "Nothing exists at \(focus.path(percentEncoded: false))."
         }
 
@@ -104,7 +113,11 @@ public enum DiagnosticsBundle {
             let names = (try? FileManager.default.contentsOfDirectory(atPath: path)) ?? []
 
             for name in names.sorted() {
-                guard let node = LocalNode.at(entry.directory.appending(path: name, directoryHint: .inferFromPath)) else {
+                let child = entry.directory.appending(path: name, directoryHint: .inferFromPath)
+
+                guard let node = try? LocalNode.at(child) ?? nil else {
+                    lines.append("  \(name): could not be described")
+
                     continue
                 }
 

@@ -9,87 +9,186 @@ import Testing
 ///
 /// What happens when the same file is changed on both sides before either side hears about the other.
 ///
-/// This is the group where a mistake costs a user their work rather than their patience, and it is the reason the client can be blocked from synchronising at all: a conflict needs the client holding a change the server has not seen while the server holds a different one, and there is no way to arrange that while the client is talking to the server. Suspending the container does not help either, because it takes the server away from this suite as well, leaving no way to make the remote change.
+/// This is the group where a mistake costs a user their work rather than their patience, and it is also the group this suite got wrong once, in a way worth writing down.
 ///
-/// The assertion is deliberately not about the name of a conflict file. On macOS 26 and newer the client answers a rejected upload with `NSFileProviderErrorLocalVersionConflictingWithServer` and **the operating system** creates the copy, so the naming is Apple's rather than Nextcloud's — and it only happens when the system asked for that treatment by passing `.failOnConflict`, which is its decision and not the client's. On older systems there is no conflict-copy contract at all and the client instead fails the upload transiently so that the modification is re-driven against a refreshed base.
+/// The first version of it blocked the client, changed both sides, unblocked, and reported the local version winning as a defect. It was not one. macOS asks a provider to fail an upload on a conflict **only when an application asked for that treatment**: an application pauses the item it has open, and resumes with `NSFileManagerResumeSyncBehaviorAfterUploadWithFailOnConflict` once the document is stable. Without that the documented behaviour is `preserveLocalChanges`, under which the local version is uploaded and the server "may create a conflict copy, or may automatically pick the winner". A test which arranges a divergence and simply waits is measuring that default. It is entitled to no opinion about which of the two permitted outcomes happens, and calling one of them a bug is a bug in the test.
 ///
-/// What holds in every one of those cases is the property worth testing: **the version which was already on the server is not silently replaced by the one which was written while the client could not see it.** Either the remote version survives alone, or both survive. What must never happen is the local version quietly winning, because that is a user's edit destroyed without anyone being told.
+/// So these tests take the same route a document-based application takes, through ``SyncControl``. It is deterministic, it needs nothing of the client, and — the point — it is the only way to ask the provider for conflict detection at all.
 ///
 @Suite("Conflicts", .requiresLiveEnvironment, .serialized, .timeLimit(.minutes(10)))
 struct ConflictTests {
+    ///
+    /// Put a file on the server and bring its content onto disk.
+    ///
+    /// - Parameters:
+    ///     - room: The room to work in.
+    ///     - name: The name to give it.
+    ///
+    /// - Returns: Its location on disk.
+    ///
+    /// - Throws: Whatever uploading, waiting or materializing raises.
+    ///
+    private func makeContestedFile(in room: CleanRoom, named name: String) async throws -> URL {
+        try await ServerWorkspace.withFixture(named: name, size: 16 * 1024, seed: 61) { source, _ in
+            try await room.server.upload(source, to: "/", force: true)
+        }
+
+        try await Waiter.waitUntil("\"\(name)\" appears in the client", timeout: LiveEnvironment.scaled(.seconds(180))) {
+            try room.localChildren().contains { $0.name == name }
+        }
+
+        let file = room.localURL(of: name)
+        _ = try Materialization.materialize(file)
+
+        return file
+    }
+
+    ///
+    /// Whether the client says it can be asked to detect conflicts at all.
+    ///
+    /// Worth asserting rather than assuming. A provider which handles the conflict error but never advertises the capability has written code no application is permitted to reach, and an application checking this key would conclude the flow is unavailable and never use it.
+    ///
     @Test(arguments: LiveEnvironment.servers)
-    func `A file changed on both sides at once does not lose the server's version.`(_ underTest: ServerUnderTest) async throws {
-        try await CleanRoom.with(underTest, testName: "Conflict.simultaneousModification") { room in
+    func `The client says whether it can pause an item and fail an upload on a conflict.`(_ underTest: ServerUnderTest) async throws {
+        try await CleanRoom.with(underTest, testName: "Conflict.advertisedControls") { room in
+            let file = try await makeContestedFile(in: room, named: "advertised.bin")
+
+            // Required rather than expected, and that distinction is the whole lesson of this suite's worst day. A key which cannot be read says nothing about the client, and an assertion which treats the two alike turns a broken reader into a finished bug report.
+            let controls = try #require(SyncControl.supportedControls(of: file), """
+            The sync-control key could not be read at all for this item, so this run cannot say what the client advertises. That is a fault in the reading, not an answer about the client, and nothing below it is evidence of anything.
+            """)
+
+            // Printed rather than only asserted, because the raw value is what settles arguments about this key and the assertions below reduce it to two bits.
+            print("  note: a file in \(underTest) advertises sync controls \(controls.rawValue).")
+
+            #expect(controls.contains(.pauseSync), """
+            The client does not advertise that an item's synchronisation can be paused, so an application following the documented flow would not attempt it.
+            """)
+
+            #expect(controls.contains(.failUploadOnConflict), """
+            The client does not advertise that an upload can be failed on a conflict. Its handling of that case is then unreachable, because the behaviour is only available on items whose provider advertises support for it.
+            """)
+
+            // The other half of the contract, and the reason a puzzling `featureUnsupported` is worth recognising on sight: a regular, non-package directory is excluded from this family outright. A bundle is not, because the system presents one as a single item.
+            //
+            // Asserted on the raw optional. Asking `supportsPausing(directory) == false` would have passed identically whether the key said no or could not be read, which makes it an expectation nothing can falsify.
+            let directory = room.localURL(of: "")
+
+            #expect(SyncControl.supportedControls(of: directory) == nil, """
+            A regular directory carries the sync-control key, but pausing one is documented to be refused with `CocoaError.featureUnsupported`. An application reading this key would attempt something that cannot work.
+            """)
+        }
+    }
+
+    ///
+    /// The contract itself.
+    ///
+    @Test(arguments: LiveEnvironment.servers)
+    func `A change made while an item was paused does not overwrite a newer server version.`(_ underTest: ServerUnderTest) async throws {
+        try await CleanRoom.with(underTest, testName: "Conflict.failOnConflict") { room in
             let name = "contested.bin"
-
-            // The file both sides are going to disagree about, materialized so that the local change is an edit of known content rather than a creation.
-            let original = try await ServerWorkspace.withFixture(named: name, size: 16 * 1024, seed: 61) { source, fingerprint in
-                try await room.server.upload(source, to: "/", force: true)
-
-                return fingerprint
-            }
-
-            try await Waiter.waitUntil("\"\(name)\" appears in the client", timeout: LiveEnvironment.scaled(.seconds(180))) {
-                try room.localChildren().contains { $0.name == name }
-            }
-
-            let file = room.localURL(of: name)
-            _ = try Materialization.materialize(file)
-            #expect(try ContentFactory.fingerprintOfFile(at: file) == original)
+            let file = try await makeContestedFile(in: room, named: name)
 
             let localContent = ContentFactory.content(size: 16 * 1024, seed: 62)
-            let remoteContent = ContentFactory.content(size: 16 * 1024, seed: 63)
-            let localFingerprint = ContentFactory.fingerprint(of: localContent)
-            let remoteFingerprint = ContentFactory.fingerprint(of: remoteContent)
+            let remoteFingerprint = ContentFactory.fingerprint(of: ContentFactory.content(size: 16 * 1024, seed: 63))
 
-            try await ServerWorkspace.withSynchronisationBlocked {
-                // The client cannot act on either of these while it is blocked, which is what lets them diverge.
-                try localContent.write(to: file)
+            // An item inherited in a paused state would make every assertion below meaningless, and says nothing about itself unless asked.
+            #expect(SyncControl.isPaused(file) == false, "The file was already paused before the test paused it, so something earlier left it that way.")
 
-                try await ServerWorkspace.withFixture(named: name, size: 16 * 1024, seed: 63) { source, _ in
-                    try await room.server.upload(source, to: "/", force: true)
+            var resumeError: (any Error)?
+
+            do {
+                // Inside this the item is out of the provider's reach, which is what lets the two sides diverge on purpose rather than by luck. Writing to it while paused is the designed flow rather than a trick: pausing exists so that an open document can be edited without synchronisation altering it underneath.
+                //
+                // Asking to resume with `failingOnConflict` is the whole point. It is the only way the provider is told to detect a conflict rather than to overwrite.
+                try await SyncControl.withPaused(file, resumingWith: .failingOnConflict) {
+                    try localContent.write(to: file)
+
+                    try await ServerWorkspace.withFixture(named: name, size: 16 * 1024, seed: 63) { source, _ in
+                        try await room.server.upload(source, to: "/", force: true)
+                    }
+
+                    #expect(try await room.remoteFingerprint(of: "/\(name)") == remoteFingerprint, "The server should be holding the remote edit before the item is resumed.")
                 }
-
-                // The server took the remote edit, and the client is none the wiser.
-                #expect(try await room.remoteFingerprint(of: "/\(name)") == remoteFingerprint)
+            } catch let SyncControlFailure.resuming(error) {
+                // Refusing to resume is how the provider reports the conflict it was asked to detect, so this is a result rather than a problem.
+                resumeError = error
             }
 
-            // Whatever the client decides, it has to settle on one of three outcomes, and all three end this wait so that the assertion below can say which happened. Waiting only for the good ones would report the bad one as an unexplained timeout.
-            try await Waiter.poll("the disagreement settles", timeout: LiveEnvironment.scaled(.seconds(240))) {
+            // Anything else — a failed pause, or a failed write — left this scope already, attributed, rather than arriving here disguised as a conflict.
+
+            guard let resumeError else {
+                // Resuming succeeded, so the upload went through. That is only correct if the server had not moved on — and it had.
+                let stored = try await room.remoteFingerprint(of: "/\(name)")
                 let remote = try await room.remoteChildren()
 
-                // A second item is the system having made a conflict copy.
+                #expect(stored == remoteFingerprint || remote.count > 1, """
+                Resuming with fail-on-conflict reported success and the local version replaced the newer one on the server, with no conflict copy kept. \
+                The server now holds: \(remote.map(\.name).sorted().joined(separator: ", ")).
+                """)
+
+                return
+            }
+
+            // The documented outcome: the provider refused the upload rather than overwriting, and the application is expected to fetch the newer version and rebase onto it.
+            let described = SyncControlFailure.describe(resumeError)
+            #expect(described.contains("localVersionConflictingWithServer") || described.contains("Conflict"), "Resuming failed, but not with the conflict the contract describes: \(described)")
+
+            // Whatever happened, the version which was on the server must still be reachable.
+            #expect(try await room.remoteFingerprint(of: "/\(name)") == remoteFingerprint, "The server's version was lost even though the upload was refused.")
+        }
+    }
+
+    ///
+    /// The default, recorded as what it is rather than judged.
+    ///
+    /// This is what the first version of this suite measured and mistook for a defect. Both outcomes it can produce are permitted, so the test asserts only that the file survives and prints which one happened — a change in that is worth noticing, but neither is wrong.
+    ///
+    @Test(arguments: LiveEnvironment.servers)
+    func `Resuming without asking for conflict detection settles on one of the permitted outcomes.`(_ underTest: ServerUnderTest) async throws {
+        try await CleanRoom.with(underTest, testName: "Conflict.preserveLocalChanges") { room in
+            let name = "uncontested.bin"
+            let file = try await makeContestedFile(in: room, named: name)
+
+            let localContent = ContentFactory.content(size: 16 * 1024, seed: 64)
+            let localFingerprint = ContentFactory.fingerprint(of: localContent)
+            let remoteFingerprint = ContentFactory.fingerprint(of: ContentFactory.content(size: 16 * 1024, seed: 65))
+
+            #expect(SyncControl.isPaused(file) == false, "The file was already paused before the test paused it, so something earlier left it that way.")
+
+            try await SyncControl.withPaused(file, resumingWith: .preservingLocalChanges) {
+                try localContent.write(to: file)
+
+                try await ServerWorkspace.withFixture(named: name, size: 16 * 1024, seed: 65) { source, _ in
+                    try await room.server.upload(source, to: "/", force: true)
+                }
+            }
+
+            try await Waiter.poll("the server settles", timeout: LiveEnvironment.scaled(.seconds(240))) {
+                let remote = try await room.remoteChildren()
+
                 guard remote.count == 1 else {
                     return true
                 }
 
-                // The client took the server's version, or overwrote it with its own.
-                let stored = try await room.remoteFingerprint(of: "/\(name)")
-                let onDisk = try? ContentFactory.fingerprintOfFile(at: file)
-
-                return stored == localFingerprint || onDisk == remoteFingerprint
+                return try await room.remoteFingerprint(of: "/\(name)") == localFingerprint
             }
 
             let remote = try await room.remoteChildren()
-            var fingerprints = [String: String]()
+            #expect(!remote.isEmpty, "The file disappeared from the server entirely, which is not one of the permitted outcomes.")
+
+            var fingerprints = [String]()
 
             for entry in remote {
-                fingerprints[entry.name] = try await room.remoteFingerprint(of: "/\(entry.name)")
+                try await fingerprints.append(room.remoteFingerprint(of: "/\(entry.name)"))
             }
 
-            // The property this suite exists for. Anything else is a report of what the client chose, not a failure.
-            #expect(fingerprints.values.contains(remoteFingerprint), """
-            The version written on the server was replaced by the one written locally while the client was blocked, and nothing was kept of it. \
-            The server now holds: \(fingerprints.map { "\($0.key) = \($0.value.prefix(12))" }.sorted().joined(separator: ", ")).
-            """)
-
-            // Which of the documented paths the client took is worth having in the output of a run, but it is a description rather than a verdict, so it is printed instead of recorded as an issue.
-            if fingerprints.values.contains(localFingerprint), remote.count > 1 {
-                print("  note: both versions survived, so the system created a conflict copy. The server holds: \(remote.map(\.name).sorted().joined(separator: ", ")).")
-            } else if fingerprints.values.contains(localFingerprint) {
-                print("  note: the local version reached the server as the only copy.")
-            } else {
-                print("  note: the remote version won and the local edit did not reach the server as a separate item.")
+            if remote.count > 1 {
+                print("  note: the server kept both versions as a conflict copy: \(remote.map(\.name).sorted().joined(separator: ", ")).")
+            } else if fingerprints.contains(localFingerprint) {
+                print("  note: the local version won and the remote edit was not kept separately.")
+            } else if fingerprints.contains(remoteFingerprint) {
+                print("  note: the remote version won and the local edit was not kept separately.")
             }
         }
     }

@@ -50,7 +50,7 @@ struct LocalDirectoryTests {
     @Test
     func `A symbolic link is reported as one instead of being followed.`() throws {
         try Self.withTree { root in
-            let node = try #require(LocalNode.at(root.appending(path: "link", directoryHint: .notDirectory)))
+            let node = try #require(try LocalNode.at(root.appending(path: "link", directoryHint: .notDirectory)))
 
             #expect(node.kind == .symbolicLink)
         }
@@ -59,7 +59,7 @@ struct LocalDirectoryTests {
     @Test
     func `An ordinary file is never dataless.`() throws {
         try Self.withTree { root in
-            let node = try #require(LocalNode.at(root.appending(path: "a.txt", directoryHint: .notDirectory)))
+            let node = try #require(try LocalNode.at(root.appending(path: "a.txt", directoryHint: .notDirectory)))
 
             #expect(node.kind == .file)
             #expect(node.size == 5)
@@ -70,8 +70,44 @@ struct LocalDirectoryTests {
     @Test
     func `Nothing is reported where nothing exists, without enumerating the parent.`() throws {
         try Self.withTree { root in
-            #expect(LocalNode.at(root.appending(path: "missing", directoryHint: .notDirectory)) == nil)
-            #expect(!LocalDirectory.exists(root.appending(path: "missing", directoryHint: .notDirectory)))
+            try #expect(LocalNode.at(root.appending(path: "missing", directoryHint: .notDirectory)) == nil)
+            try #expect(!LocalDirectory.exists(root.appending(path: "missing", directoryHint: .notDirectory)))
         }
+    }
+
+    ///
+    /// The distinction the whole primitive turns on, and the one it used to throw away.
+    ///
+    /// A refused `lstat` returned the same `nil` as a missing file, so `LocalDirectory.exists` answered `false`, a listing quietly dropped the entry, and every assertion above was told the item was not there. That is the preflight's `denied`-versus-`empty` confusion again, one layer below the preflight that exists to prevent it.
+    ///
+    @Test
+    func `A location the process may not inspect is not reported as empty.`() throws {
+        let root = URL(filePath: NSTemporaryDirectory(), directoryHint: .isDirectory).appending(path: UUID().uuidString, directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+
+        let closed = root.appending(path: "closed", directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(at: closed, withIntermediateDirectories: true)
+        try Data("hidden".utf8).write(to: closed.appending(path: "inside.txt", directoryHint: .notDirectory))
+
+        // Nothing may be resolved through a directory with no execute bit, so an `lstat` of a path inside it is refused rather than answered.
+        try FileManager.default.setAttributes([.posixPermissions: 0o000], ofItemAtPath: closed.path(percentEncoded: false))
+
+        defer {
+            try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: closed.path(percentEncoded: false))
+            try? FileManager.default.removeItem(at: root)
+        }
+
+        let inside = closed.appending(path: "inside.txt", directoryHint: .notDirectory)
+
+        #expect(throws: LocalInspectionError.self) {
+            try LocalNode.at(inside)
+        }
+
+        #expect(throws: LocalInspectionError.self) {
+            try LocalDirectory.exists(inside)
+        }
+
+        // A location which genuinely holds nothing still answers, and answers no.
+        #expect(try LocalNode.at(root.appending(path: "absent", directoryHint: .notDirectory)) == nil)
     }
 }

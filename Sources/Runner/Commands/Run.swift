@@ -169,11 +169,7 @@ struct Run: AsyncParsableCommand {
             }
 
             Console.log()
-            Console.log("Drafted \(written.count) bug report\(written.count == 1 ? "" : "s"), to be finished by hand and filed by you:")
-
-            for url in written {
-                Console.log("  \(url.path(percentEncoded: false))")
-            }
+            Console.describe(written)
         } catch {
             Console.log("Could not draft a bug report: \(error)")
         }

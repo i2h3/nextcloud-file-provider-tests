@@ -74,10 +74,18 @@ public struct LocalNode: Hashable, Sendable {
     ///
     /// - Returns: The description, or `nil` if nothing is there.
     ///
-    public static func at(_ url: URL) -> LocalNode? {
+    /// - Throws: ``LocalInspectionError`` if the system would not say what is there, which is not the same answer as nothing being there.
+    ///
+    public static func at(_ url: URL) throws -> LocalNode? {
         var status = stat()
+        let path = url.path(percentEncoded: false)
 
-        guard lstat(url.path(percentEncoded: false), &status) == 0 else {
+        guard lstat(path, &status) == 0 else {
+            // Only these two mean the location is empty. Every other errno means the question was not answered, and returning `nil` for those is how "the process was not allowed to look" became "there is nothing there" throughout this suite.
+            guard errno == ENOENT || errno == ENOTDIR else {
+                throw LocalInspectionError(path: path, code: errno)
+            }
+
             return nil
         }
 

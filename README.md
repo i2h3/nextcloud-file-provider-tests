@@ -41,10 +41,47 @@ Also needed:
   by a restart of it, because a privacy grant only applies to a newly launched process. This is not
   optional, and it is not merely about reading files: without it macOS asks whether the application
   may access files managed by Nextcloud, suppresses the repeats, and then answers later reads with
-  `Operation not permitted` and no dialog at all. `~/Library/CloudStorage` then reads as empty rather
-  than as forbidden, and every assertion about a domain becomes a puzzling failure. With it, a domain
-  is read silently and a run needs nobody at the keyboard. Preflight checks it by reading a genuinely
-  protected path, so `swift run tests doctor` will tell you.
+  `Operation not permitted` and no dialog at all. With it, a domain is read silently and a run needs
+  nobody at the keyboard. Preflight checks it by reading a genuinely protected path, so
+  `swift run tests doctor` will tell you.
+
+  The service is `kTCCServiceFileProviderDomain`, which is not Full Disk Access and not the
+  "Files and Folders" group in System Settings — those are the `SystemPolicy*` services. Its grant is
+  keyed by a *triple*: the service, the reading application, and the **provider domain**. A provider
+  reading its own domains is granted automatically because the bundles match, which is why the client
+  never prompts and this harness does: the reader is a different bundle, inherently.
+
+  `~/Library/CloudStorage` *itself* lists without any grant — protection resolves path to domain, and
+  the parent resolves to no domain — which is why an early version of this check passed on a machine
+  that then failed every test.
+
+  A read of a domain has four outcomes, and telling them apart is the whole job:
+
+  | | |
+  | --- | --- |
+  | Granted | the read succeeds |
+  | Explicitly denied | `NSCocoaErrorDomain` 257 with an underlying `EPERM`, loudly |
+  | Never asked, and the reader cannot be prompted | **the read parks indefinitely** |
+  | Granted but the provider has not populated or authenticated yet | an empty listing, legitimately |
+
+  The third is the dangerous one and it is the *default* for a fresh domain under an unattended
+  runner: a client with no `NSFileProviderDomainUsageDescription` cannot be shown the prompt, so the
+  access request is never resolved and the read neither returns nor fails. That is why every wait in
+  this harness carries its own deadline and abandons the thread rather than waiting on it — see
+  `Deadline`. An empty listing is not a permission problem and is a state to wait on.
+
+  There is **no non-interactive way to pre-grant this**: `tccutil` has only a `reset` verb, and the
+  service does not appear in the configuration-profile surface where PPPC payloads are defined. Full
+  Disk Access is what makes unattended runs work in practice — with it granted to the terminal, this
+  suite creates over a hundred fresh domains in a run and is never prompted once, which is also the
+  evidence that the grant covers every domain rather than being consulted per domain.
+
+  That makes the manual grant a deployment requirement rather than a convenience, and the reason is
+  structural. A SwiftPM test bundle has no `Info.plist` at all, so it cannot declare
+  `NSFileProviderDomainUsageDescription`; a reader which cannot declare it cannot be prompted; and a
+  request which cannot be prompted is never resolved. The obvious remedy — adding the key — is not
+  reachable without changing how the bundle is built. Somebody granting Full Disk Access by hand,
+  once, is what makes this suite runnable at all, and it is invisible from the code.
 - Enough free disk space for container images and materialized fixtures.
 
 A developer machine is explicitly supported for writing and debugging these tests. The destructive
@@ -164,7 +201,8 @@ start — which is exactly why the scheme points at a file instead of carrying t
 Two settings which are not optional:
 
 - **Full Disk Access for Xcode**, followed by quitting and reopening it. A privacy grant applies only
-  to a newly launched process, and without it the domains read as empty rather than as forbidden.
+  to a newly launched process, and without it reads inside a domain are refused with
+  `NSCocoaErrorDomain` 257.
 - **Parallel execution off**, in the same scheme under Test, Options. There is one desktop client and
   one File Provider domain on the machine, so the suites cannot run at once. A clean room refuses to
   be built while another one stands and says so, rather than letting the two corrupt each other.
@@ -259,7 +297,7 @@ reported yet, and this repository is public.
 
 The directory holds:
 
-- `reports/` — a drafted bug report per failure. See *When a test finds something*.
+- `reports/` — a drafted bug report per defect. See *When a test finds something*.
 - `run.json` — what the run was: the client, the servers and the releases they actually reported, the
   preflight checks, the flags it was started with, and the machine's time zone. The zone is not
   incidental — the File Provider extension timestamps its log in local time and never says which,
@@ -328,12 +366,30 @@ A failing test here is usually a client defect, and the step between noticing th
 upstream is mostly transcription: which client, which server, which macOS, what was asserted, what
 happened instead. That part is done for you.
 
-A failed run drafts a report per failure into `Artifacts/<run>/reports/`, and `swift run tests report`
+A failed run drafts a report per defect into `Artifacts/<run>/reports/`, and `swift run tests report`
 does the same on demand for any run — name it, or leave it out for the most recent one. The document
 follows the bug template of [nextcloud/desktop](https://github.com/nextcloud/desktop) field by field,
 so it is pasted rather than rewritten: what the defect is, how to reproduce it, what was expected,
 what happened instead, which files were affected, the environment, and an excerpt of the File
 Provider extension's own log around the failure.
+
+One report covers one defect rather than one failure. Every test runs against every server in the
+matrix, so a client defect arrives as four failures differing only in a port number and the room they
+happened in — and four near-identical documents describing one problem are worse than one. Failures
+are grouped by the test, the expectation within it and what that expectation said once the parts
+which vary per run are elided. Two expectations failing, or one expectation failing for two different
+reasons, stay two reports.
+
+Grouping is also what makes the most useful line in a first report possible, because no single
+failure knows it: *"Affected: `latest`, `latest+push`. Not affected: `33`, `33+push`."* A maintainer
+reading that has a bisection already started.
+
+The comparison is worth reading even when it is empty. A defect in the client is usually selective —
+it tracks something the matrix varies, which is why the matrix exists. One which tracks nothing, and
+fails identically on every server, is as often a fault in the suite doing the observing, so a report
+in that shape carries a line saying to rule the suite out first. That is not a hunch: this project's
+first sixteen failures were uniform across four servers and every one of them was a single broken
+accessor in the harness. The shape said so before any of the messages did.
 
 An existing report is never overwritten without `--force`, because the point of a draft is that
 somebody edits it. A failure the suite already knows about is skipped: it is being watched on purpose
@@ -387,11 +443,27 @@ are not interchangeable.
 | Tool | What it stops | Use it for |
 | --- | --- | --- |
 | `ServerWorkspace.withServerPaused` | the whole server, for everybody | outages: the client cannot reach the server, and neither can this suite |
-| `ServerWorkspace.withSynchronisationBlocked` | only the client | conflicts: the suite keeps full use of the server while the client is deaf to it |
+| `ServerWorkspace.withSynchronisationBlocked` | the whole client, both directions | a client which is up but deaf, on any macOS the suite supports |
+| `SyncControl.pause` / `resume` | one item | **conflicts** |
 
 Suspending the container cannot produce a conflict, because the remote half of the disagreement has
-to be created through the very server which is suspended. Blocking the client is what the conflict
-suite uses.
+to be created through the very server which is suspended.
+
+Blocking the client can produce a divergence, but not a *conflict test*, and the difference cost this
+project a wrong bug report. macOS asks a provider to detect a conflict only when an application asked
+for that treatment: it pauses the item it has open and resumes with
+`NSFileManagerResumeSyncBehaviorAfterUploadWithFailOnConflict`. Absent that, the documented behaviour
+is `preserveLocalChanges` — the local version is uploaded and the server "may create a conflict copy,
+or may automatically pick the winner". A test which merely arranges a divergence and waits is
+measuring that default, and has no standing to call either permitted outcome a defect.
+
+So the conflict suite goes through `SyncControl`, which takes the same route a document-based
+application takes. It is per-item, addressed by URL, needs no provider identity and no change to the
+client, and is the only way to ask for conflict detection at all. `SyncControl.supportedControls`
+reads what the provider advertises through `NSURLUbiquitousItemSupportedSyncControlsKey`, because the
+fail-on-conflict behaviour is only available where the provider says it is supported — a provider
+which handles the error but never advertises the capability has written code no application may
+reach. These calls are macOS 26 and newer.
 
 A blocked client is dangerous in a way a suspended container is not. A frozen container announces
 itself, because the next test cannot reach its server at all. A blocked client is silent: every later

@@ -66,14 +66,14 @@ struct Report: AsyncParsableCommand {
             return
         }
 
-        Console.log("Drafted \(written.count) bug report\(written.count == 1 ? "" : "s") from \(directory.lastPathComponent):")
+        Console.log("Drafted \(written.all.count) document\(written.all.count == 1 ? "" : "s") from \(directory.lastPathComponent):")
+        Console.describe(written)
 
-        for url in written {
-            Console.log("  \(url.path(percentEncoded: false))")
+        // Only where there is something to file. Saying it over a list of measurements which never happened is how one of them ends up in somebody's issue tracker.
+        if !written.conclusive.isEmpty {
+            Console.log()
+            Console.log("Each is a draft of what the run found. Read one before filing it, and file it yourself.")
         }
-
-        Console.log()
-        Console.log("Each is a draft of what the run found. Read one before filing it, and file it yourself.")
     }
 
     ///
@@ -98,13 +98,13 @@ struct Report: AsyncParsableCommand {
         // A run may be named by its identifier, which is how it appears in the output of the run itself, or by a path for anything unusual.
         let named = artifactsDirectory.appending(path: run, directoryHint: .isDirectory)
 
-        if LocalDirectory.exists(named) {
+        if try LocalDirectory.exists(named) {
             return named
         }
 
         let given = URL(filePath: run, directoryHint: .isDirectory)
 
-        guard LocalDirectory.exists(given) else {
+        guard try LocalDirectory.exists(given) else {
             throw ReportError.runNotFound(name: run)
         }
 

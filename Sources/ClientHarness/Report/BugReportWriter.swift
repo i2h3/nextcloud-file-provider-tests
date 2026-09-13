@@ -23,16 +23,16 @@ public enum BugReportWriter {
     ///     - evidence: What the run left behind.
     ///     - isOverwriting: Whether a report which already exists may be replaced.
     ///
-    /// - Returns: The files written.
+    /// - Returns: The files written, split by whether the run measured anything.
     ///
     /// - Throws: ``BugReportError`` if the reports would be written somewhere they could be committed.
     ///
     @discardableResult
-    public static func write(for evidence: RunEvidence, isOverwriting: Bool = false) throws -> [URL] {
+    public static func write(for evidence: RunEvidence, isOverwriting: Bool = false) throws -> DraftedReports {
         let unknown = evidence.failures.filter { !$0.isKnown }
 
         guard !unknown.isEmpty else {
-            return []
+            return DraftedReports(conclusive: [], inconclusive: [], all: [])
         }
 
         let directory = evidence.directory.appending(path: directoryName, directoryHint: .isDirectory)
@@ -40,9 +40,11 @@ public enum BugReportWriter {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
 
         var written = [URL]()
+        var conclusive = [URL]()
+        var inconclusive = [URL]()
 
-        for (index, failure) in unknown.enumerated() {
-            let report = makeReport(for: failure, evidence: evidence)
+        for (index, group) in FailureGroup.group(unknown).enumerated() {
+            let report = makeReport(for: group, evidence: evidence)
             let url = directory.appending(path: String(format: "%04d-%@.md", index + 1, report.slug), directoryHint: .notDirectory)
 
             // A report is generated once and then finished by hand. Replacing one without being asked would throw that work away.
@@ -53,9 +55,15 @@ public enum BugReportWriter {
             let rendered = BugReportRenderer.render(report, runIdentifier: evidence.manifest?.runIdentifier ?? evidence.directory.lastPathComponent, secrets: secrets(of: evidence))
             try Data(rendered.utf8).write(to: url, options: .atomic)
             written.append(url)
+
+            if report.isConclusive {
+                conclusive.append(url)
+            } else {
+                inconclusive.append(url)
+            }
         }
 
-        return written
+        return DraftedReports(conclusive: conclusive, inconclusive: inconclusive, all: written)
     }
 
     ///
@@ -68,6 +76,22 @@ public enum BugReportWriter {
     /// - Returns: The report.
     ///
     public static func makeReport(for failure: ReportedFailure, evidence: RunEvidence) -> BugReport {
+        makeReport(for: FailureGroup(representative: failure, occurrences: [failure]), evidence: evidence)
+    }
+
+    ///
+    /// Gather everything known about one defect, however many times the run saw it.
+    ///
+    /// The evidence is taken from the first occurrence rather than merged across all of them. Merging logs from four rooms would produce a document nobody can follow, and the occurrences are by construction the same failure — what they add is the comparison between matrix entries, which needs none of their logs.
+    ///
+    /// - Parameters:
+    ///     - group: The failures which are one defect.
+    ///     - evidence: What the run left behind.
+    ///
+    /// - Returns: The report.
+    ///
+    public static func makeReport(for group: FailureGroup, evidence: RunEvidence) -> BugReport {
+        let failure = group.representative
         let room = evidence.room(of: failure)
         var entries = [ExtensionLogEntry]()
         var logPath: String?
@@ -86,7 +110,8 @@ public enum BugReportWriter {
             excerpt: selected.lines,
             omittedLines: selected.omitted,
             logPath: logPath,
-            hasCaseAttribution: evidence.hasCaseAttribution
+            hasCaseAttribution: evidence.hasCaseAttribution,
+            occurrences: group.occurrences
         )
     }
 

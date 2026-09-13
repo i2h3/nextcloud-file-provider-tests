@@ -41,7 +41,21 @@ public enum Preflight {
     /// - Returns: The outcome.
     ///
     private static func clientInstallation() -> PreflightCheck {
-        guard LocalDirectory.exists(ClientPaths.application) else {
+        let isInstalled: Bool
+
+        do {
+            isInstalled = try LocalDirectory.exists(ClientPaths.application)
+        } catch {
+            // The third outcome, and the one this check used to report as the second. "Nothing is installed there" and "this process was not allowed to look" send a reader to entirely different remedies, and a preflight whose whole purpose is to separate states must not merge two of them at its first question.
+            return PreflightCheck(
+                subject: "Desktop client",
+                isSatisfied: false,
+                detail: "\(error)",
+                remedy: "Grant Full Disk Access to the application which starts the run and restart it. Until then this check cannot tell whether the client is installed."
+            )
+        }
+
+        guard isInstalled else {
             return PreflightCheck(
                 subject: "Desktop client",
                 isSatisfied: false,
@@ -167,7 +181,8 @@ public enum Preflight {
     ///
     private static func docker() async -> PreflightCheck {
         for path in ["/usr/local/bin/docker", "/opt/homebrew/bin/docker"] {
-            guard LocalDirectory.exists(URL(filePath: path)) else {
+            // A path this process may not inspect is simply not a candidate; the next one is tried, and a failure to find any is reported by the check itself.
+            guard (try? LocalDirectory.exists(URL(filePath: path))) == true else {
                 continue
             }
 

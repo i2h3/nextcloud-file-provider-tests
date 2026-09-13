@@ -28,7 +28,17 @@ public enum RemoteListing {
 
         return items
             .filter { normalized($0.path) != containerPath }
-            .map { RemoteEntry(name: $0.name, isDirectory: $0.isDirectory, size: $0.isDirectory ? nil : Int64($0.size)) }
+            .map {
+                // `instanceId` is `oc:fileid` and `id` is `oc:id`, which is the opposite of what both names suggest. The identity which survives a rename is the former, and asserting on the latter would produce a test passing for the wrong reason.
+                RemoteEntry(
+                    name: $0.name,
+                    isDirectory: $0.isDirectory,
+                    size: $0.isDirectory ? nil : Int64($0.size),
+                    fileIdentifier: $0.instanceId,
+                    entityTag: $0.entityTag,
+                    modifiedAt: $0.modification
+                )
+            }
     }
 
     ///

@@ -34,12 +34,16 @@ public enum ClientLog {
             .filter { $0.contains("nextcloud.log") && !$0.hasSuffix(".gz") }
             .map { ClientPaths.logDirectory.appending(path: $0, directoryHint: .notDirectory) }
 
-        return candidates.max { first, second in
-            let firstDate = LocalNode.at(first)?.modificationDate ?? .distantPast
-            let secondDate = LocalNode.at(second)?.modificationDate ?? .distantPast
+        // A candidate whose date cannot be read is dropped rather than ranked as the oldest. Ranking it oldest meant an unreadable current log lost to a rotated one, and "the newest log" then named a file from a previous run.
+        let dated = candidates.compactMap { url -> (URL, Date)? in
+            guard let date = (try? LocalNode.at(url))??.modificationDate else {
+                return nil
+            }
 
-            return firstDate < secondDate
+            return (url, date)
         }
+
+        return dated.max { $0.1 < $1.1 }?.0
     }
 
     ///

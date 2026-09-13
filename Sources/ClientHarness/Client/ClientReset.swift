@@ -35,7 +35,7 @@ public enum ClientReset {
         return try await ClientInventory(
             accounts: ClientConfigurationFile.accounts(in: ClientPaths.configurationFile),
             domainDirectories: clientDomainDirectories(),
-            stateDirectories: stateDirectories.filter { LocalDirectory.exists($0) },
+            stateDirectories: stateDirectories.filter { try LocalDirectory.exists($0) },
             hasKeychainCredentials: hasKeychainCredentials(),
             isRunning: isClientRunning || isProviderRunning,
             isSynchronisationBlocked: ClientSynchronisation.isBlocked()
@@ -100,7 +100,7 @@ public enum ClientReset {
     /// - Throws: Whatever copying raises.
     ///
     public static func backUpConfiguration(to backupDirectory: URL) throws {
-        guard LocalDirectory.exists(ClientPaths.configurationDirectory) else {
+        guard try LocalDirectory.exists(ClientPaths.configurationDirectory) else {
             return
         }
 

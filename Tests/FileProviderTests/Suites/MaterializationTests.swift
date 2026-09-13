@@ -34,7 +34,7 @@ struct MaterializationTests {
                 try room.localChildren().contains { $0.name == name }
             }
 
-            let placeholder = try #require(LocalNode.at(file))
+            let placeholder = try #require(try LocalNode.at(file))
             #expect(placeholder.size == Int64(size))
 
             // An empty file has nothing to fetch, so the system has no reason to keep it dataless.
@@ -52,7 +52,7 @@ struct MaterializationTests {
 
             // An empty file keeps the dataless flag after being read, and reasonably so: there was never anything to fetch, so nothing ever cleared it. Only a file with content proves that reading it brought the content down.
             if size > 0 {
-                #expect(LocalNode.at(file)?.isDataless == false)
+                #expect(try LocalNode.at(file)?.isDataless == false)
             }
         }
     }
@@ -75,10 +75,10 @@ struct MaterializationTests {
             // Everything the harness does to inspect an item, done repeatedly. None of it may bring the content down.
             for _ in 0 ..< 5 {
                 _ = try room.localChildren()
-                _ = LocalNode.at(file)
+                _ = try LocalNode.at(file)
             }
 
-            #expect(LocalNode.at(file)?.isDataless == true, "Inspecting an item fetched it, which makes every assertion about materialization meaningless.")
+            #expect(try LocalNode.at(file)?.isDataless == true, "Inspecting an item fetched it, which makes every assertion about materialization meaningless.")
         }
     }
 
@@ -99,27 +99,27 @@ struct MaterializationTests {
 
             let file = room.localURL(of: name)
             _ = try Materialization.materialize(file)
-            #expect(LocalNode.at(file)?.isDataless == false)
+            #expect(try LocalNode.at(file)?.isDataless == false)
 
             #expect(Materialization.evict(file), "FileManager refused to evict the item.")
 
             // Eviction is asynchronous, and it does not settle all at once: the dataless flag has been observed to flip while the reported size was still catching up. All three properties of a placeholder are therefore awaited together rather than asserted the moment the flag appears.
             try await Waiter.waitUntil("\"\(name)\" is a placeholder of the full size again", timeout: LiveEnvironment.scaled(.seconds(60))) {
-                guard let node = LocalNode.at(file) else {
+                guard let node = try LocalNode.at(file) else {
                     return false
                 }
 
                 return node.isDataless && node.size == 512 * 1024 && node.allocatedBlocks == 0
             }
 
-            let evicted = try #require(LocalNode.at(file))
+            let evicted = try #require(try LocalNode.at(file))
             #expect(evicted.isDataless)
             #expect(evicted.size == 512 * 1024, "An evicted item should still report the size of the file it stands for.")
             #expect(evicted.allocatedBlocks == 0, "An evicted item should occupy no blocks.")
 
             // The point of evicting is being able to get it back.
             #expect(try ContentFactory.fingerprint(of: Materialization.materialize(file)) == fingerprint)
-            #expect(LocalNode.at(file)?.isDataless == false)
+            #expect(try LocalNode.at(file)?.isDataless == false)
         }
     }
 
@@ -137,12 +137,12 @@ struct MaterializationTests {
             }
 
             let file = room.localURL(of: name)
-            #expect(LocalNode.at(file)?.isDataless == true)
+            #expect(try LocalNode.at(file)?.isDataless == true)
 
             #expect(Materialization.startDownloading(file), "FileManager refused to start the download.")
 
             try await Waiter.waitUntil("\"\(name)\" has been fetched without being read", timeout: LiveEnvironment.scaled(.seconds(60))) {
-                LocalNode.at(file)?.isDataless == false
+                try LocalNode.at(file)?.isDataless == false
             }
         }
     }

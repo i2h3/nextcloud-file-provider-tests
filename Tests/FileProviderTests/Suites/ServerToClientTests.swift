@@ -38,7 +38,7 @@ struct ServerToClientTests {
 
             MetricsRecorder.record("server to client propagation", duration: ContinuousClock.now - started, in: room, test: "ServerToClient.fileAppearsAndMaterializes", payloadSize: Int64(content.count))
 
-            let placeholder = try #require(LocalNode.at(file))
+            let placeholder = try #require(try LocalNode.at(file))
             #expect(placeholder.size == Int64(content.count))
             #expect(placeholder.isDataless, "The file should arrive as a placeholder rather than already materialized.")
 
@@ -47,7 +47,7 @@ struct ServerToClientTests {
             MetricsRecorder.record("materialization", duration: ContinuousClock.now - materializationStarted, in: room, test: "ServerToClient.fileAppearsAndMaterializes", payloadSize: Int64(content.count))
 
             #expect(ContentFactory.fingerprint(of: arrived) == fingerprint)
-            #expect(LocalNode.at(file)?.isDataless == false)
+            #expect(try LocalNode.at(file)?.isDataless == false)
         }
     }
 

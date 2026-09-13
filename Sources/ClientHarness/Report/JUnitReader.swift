@@ -12,6 +12,13 @@ import Foundation
 ///
 public enum JUnitReader {
     ///
+    /// How the testing library introduces an error which escaped a test, as opposed to an expectation which failed.
+    ///
+    /// The xUnit report keeps no field for the distinction, so this prefix is all that survives of it — and the distinction decides whether a document is a bug report or a record of a measurement that never happened.
+    ///
+    static let thrownErrorPrefix = "Caught error: "
+
+    ///
     /// The name of the file a run writes its results to.
     ///
     /// Not the name the runner asks for. The option takes `results.xml`, and the testing library writes this instead.
@@ -46,10 +53,14 @@ public enum JUnitReader {
                 continue
             }
 
+            let decoded = decode(message)
+
             failures.append(ReportedFailure(
                 testIdentifier: className.isEmpty ? testName : "\(className)/\(testName)",
                 testDisplayName: testName.replacingOccurrences(of: "`", with: ""),
-                message: decode(message)
+                message: decoded,
+                // This file carries no structured record of whether the test threw or contradicted an expectation, and letting the field take its default would answer "contradicted an expectation" — which is the answer that turns an abandoned measurement into a bug report somebody files. The prefix is the only signal the format preserves, and reading it wrongly costs a caveat on a document rather than a false claim in one.
+                thrownError: decoded.hasPrefix(thrownErrorPrefix) ? String(decoded.dropFirst(thrownErrorPrefix.count)) : nil
             ))
         }
 

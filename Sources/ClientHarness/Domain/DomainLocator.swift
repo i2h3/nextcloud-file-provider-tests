@@ -127,7 +127,7 @@ public enum DomainLocator {
     ///
     public static func waitForRemoval(of domain: URL, timeout: Duration) async throws {
         try await Waiter.waitUntil("the domain at \(domain.path(percentEncoded: false)) is gone", timeout: timeout) {
-            !LocalDirectory.exists(domain)
+            try !LocalDirectory.exists(domain)
         }
     }
 }

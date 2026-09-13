@@ -25,7 +25,7 @@ struct RecoveryTests {
                 try content.write(to: room.localURL(of: name))
 
                 // A local write does not depend on the server, which is the entire promise of a local file.
-                #expect(LocalDirectory.exists(room.localURL(of: name)))
+                #expect(try LocalDirectory.exists(room.localURL(of: name)))
             }
 
             let entry = try await room.waitForRemoteEntry(named: name, timeout: LiveEnvironment.scaled(.seconds(180)))
@@ -59,7 +59,7 @@ struct RecoveryTests {
 
                 #expect(digest == fingerprint)
                 #expect(names.contains(name))
-                #expect(LocalNode.at(file)?.isDataless == false)
+                #expect(try LocalNode.at(file)?.isDataless == false)
             }
         }
     }

@@ -55,16 +55,22 @@ public struct RunEvidence: Sendable {
     ///
     public func room(of failure: ReportedFailure) -> RoomManifest? {
         // The window is the reliable way, because it needs nothing of the testing library beyond a timestamp.
-        if let occurredAt = failure.occurredAt, let placed = rooms.first(where: { $0.contains(occurredAt) }) {
-            return placed
+        //
+        // The latest match rather than the first: a room whose end was never recorded has an open-ended window, so taking the first would let the earliest unclosed room of the run swallow every later moment.
+        if let occurredAt = failure.occurredAt {
+            let candidates = rooms.filter { $0.contains(occurredAt) }
+
+            if let placed = candidates.max(by: { $0.startedAt < $1.startedAt }) {
+                return placed
+            }
         }
 
-        // Failing that, a room knows which test asked for it, and a run narrowed to one test has only one candidate.
-        guard let identifier = failure.testIdentifier.split(separator: "/").first.map(String.init) else {
-            return nil
-        }
+        // Failing that, a room knows which test asked for it — but only an exact, unambiguous match will do.
+        //
+        // This used to match the *suite* and take the first hit, which meant every failure the window could not place was handed the earliest room of its whole suite: a different test's throwaway user, a different test's domain, and a different test's extension log, all quoted as this failure's own evidence and all internally consistent. Four drafts on disk say exactly that. It fires on every thrown error, because the library records the issue after the room has been torn down, and on every failure read from the xUnit report, which carries no timestamps at all.
+        let candidates = rooms.filter { $0.testIdentifier == failure.testIdentifier }
 
-        return rooms.first { $0.testIdentifier?.hasPrefix(identifier) == true }
+        return candidates.count == 1 ? candidates.first : nil
     }
 
     ///

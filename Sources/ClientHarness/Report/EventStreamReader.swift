@@ -92,7 +92,13 @@ public enum EventStreamReader {
             comments: comments,
             sourceLocation: location,
             occurredAt: occurredAt,
-            isKnown: issue["isKnown"] as? Bool ?? false
+            isKnown: issue["isKnown"] as? Bool ?? false,
+            // Present only when the test threw. Its absence is what says an expectation was contradicted rather than a step abandoned, and the two mean opposite things about who has a problem.
+            thrownError: (issue["_error"] as? [String: Any]).map { error in
+                let domain = error["domain"] as? String ?? "an unnamed domain"
+
+                return (error["description"] as? String).map { "\($0) (\(domain))" } ?? domain
+            }
         )
     }
 }

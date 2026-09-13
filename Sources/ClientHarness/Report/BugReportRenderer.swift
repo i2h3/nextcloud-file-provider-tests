@@ -24,8 +24,22 @@ public enum BugReportRenderer {
     public static func render(_ report: BugReport, runIdentifier: String, secrets: [String] = []) -> String {
         var lines = [String]()
 
-        lines.append("> Drafted from run `\(runIdentifier)` by an end-to-end test suite. Read it before filing it.")
+        if report.isConclusive {
+            lines.append("> Drafted from run `\(runIdentifier)` by an end-to-end test suite. Read it before filing it.")
+        } else {
+            // The distinction the whole document turns on. A test which threw on its way to an expectation has shown that this suite could not carry out the measurement — which may be the client's fault, and may equally be the suite's, and is not evidence of either until somebody looks.
+            lines.append("> **Not a bug report.** This test did not contradict an expectation — it raised an error before reaching one, so the run could not make the measurement it intended. That may be the client's doing or this suite's, and the document below is a record of a measurement which did not happen rather than of a defect. Establish which before treating any of it as a finding.")
+            lines.append(">")
+            lines.append("> Drafted from run `\(runIdentifier)`.")
+        }
+
         lines.append("")
+
+        // Placed here rather than in the environment because it changes whether the document is filed at all, and a reader who has reached the environment section has already decided.
+        if report.isUniformAcrossMatrix {
+            lines.append("> This failed on every server the run tested, which is worth a second look before filing. A defect in the client usually tracks something the matrix varies; one which does not track anything is as often a fault in the suite observing it. Rule the suite out first.")
+            lines.append("")
+        }
 
         appendDescription(to: &lines, report: report)
         appendReproduction(to: &lines, report: report)
@@ -43,7 +57,15 @@ public enum BugReportRenderer {
     /// Nothing is composed here. An expectation in this suite carries a comment saying what must not happen, written by a person at the time the test was written, and that sentence describes the defect better than anything assembled afterwards could. Quoting it is not the same as generating it.
     ///
     private static func appendDescription(to lines: inout [String], report: BugReport) {
-        lines.append(report.summary)
+        guard let description = report.writtenDescription else {
+            // Saying nothing is the honest answer, and it is also the actionable one: it names the thing that would have filled this in. Falling back to the name of the test here would print what *should* happen as though it were what went wrong.
+            lines.append("No sentence was written beside the expectation that failed, so this run cannot say what the defect is — only what was asserted and what happened, both below. A comment beside the expectation is what fills this in, which makes writing one the same act as writing this paragraph.")
+            lines.append("")
+
+            return
+        }
+
+        lines.append(description)
         lines.append("")
     }
 
@@ -56,9 +78,21 @@ public enum BugReportRenderer {
         lines.append("Found by an automated end-to-end suite, which reproduces it on demand:")
         lines.append("")
         lines.append("```bash")
-        lines.append("swift run tests --tags \(report.room?.server.tag ?? "latest") --filter \(suiteName(of: report.failure))")
+
+        // The tag comes from the room or not at all. Defaulting to `latest` prints a complete, runnable, plausible command naming a matrix entry the run may never have deployed — and a maintainer who runs it and sees nothing concludes the report is wrong rather than that the command was invented.
+        if let tag = report.room?.server.tag {
+            lines.append("swift run tests --tags \(tag) --filter \(suiteName(of: report.failure))")
+        } else {
+            lines.append("swift run tests --filter \(suiteName(of: report.failure))")
+        }
+
         lines.append("```")
         lines.append("")
+
+        if report.room == nil {
+            lines.append("This failure could not be placed in the clean room it happened in, so the command above runs the whole suite rather than the server this failure came from, and no log of the File Provider extension is quoted below.")
+            lines.append("")
+        }
 
         if let location = report.failure.sourceLocation {
             lines.append("The assertion is at `\(location)`.")
@@ -70,10 +104,10 @@ public enum BugReportRenderer {
     /// Both halves of what a bug is, and neither of them invented.
     ///
     private static func appendExpectation(to lines: inout [String], report: BugReport) {
-        // Only the name of the test. What the expectation said about the failure is the description, and saying it twice trains a reader to skip one of them.
+        // Only the name of the test, which is phrased as the property that should hold. Falling through to the description of the failure would print what went wrong under the heading asking what should have happened — the same inversion as the description slot, with the two swapped.
         lines.append("## Expected behavior")
         lines.append("")
-        lines.append(report.failure.testDisplayName ?? report.summary)
+        lines.append(report.failure.testDisplayName ?? "The run did not record the name of the test, so what it expected cannot be stated here.")
         lines.append("")
 
         lines.append("## What happened instead")
@@ -106,14 +140,30 @@ public enum BugReportRenderer {
         lines.append("| --- | --- |")
         lines.append("| Operating system | macOS \(report.manifest?.machine["operatingSystem"] ?? "—") |")
         lines.append("| Desktop client | \(clientDescription(of: report)) |")
-        lines.append("| Installation method | Signed build in `/Applications`, launched once by hand |")
+        // Deliberately not a constant any more. It read "Signed build in `/Applications`, launched once by hand" on every report ever drafted, in the same shape as the rows either side of it, which are measured — and it contradicted the row above it on every run started with the flag that accepts a development build.
+        lines.append("| Installation method | \(installationDescription(of: report)) |")
 
-        if let server = report.room?.server {
+        let entries = report.occurrences.compactMap(\.caseDisplayName)
+
+        if entries.count > 1, let servers = report.manifest?.servers, !servers.isEmpty {
+            // Naming the room's own server here would be wrong once the defect is known to span the matrix: it is the server of the first occurrence, not of the defect. The versions are what a maintainer needs; which entry is which is the row below.
+            var versions = [String]()
+
+            for server in servers where entries.contains(server.description) {
+                let version = server.versionString ?? server.tag
+
+                if !versions.contains(version) {
+                    versions.append(version)
+                }
+            }
+
+            lines.append("| Nextcloud Server | \(versions.joined(separator: ", ")) |")
+        } else if let server = report.room?.server {
             lines.append("| Nextcloud Server | \(server.versionString ?? server.tag) (image tag `\(server.tag)`\(server.isPushEnabled ? ", with the High Performance Backend" : "")) |")
         }
 
-        if let caseName = report.failure.caseDisplayName {
-            lines.append("| Failing matrix entry | `\(caseName)` |")
+        if !entries.isEmpty {
+            lines.append("| Failing matrix \(entries.count == 1 ? "entry" : "entries") | \(entries.map { "`\($0)`" }.joined(separator: ", ")) |")
         }
 
         // What the run verified about the machine before it started. Most of it is unremarkable, and that is the point: it answers the questions a maintainer would otherwise have to ask before believing the rest.
@@ -132,6 +182,17 @@ public enum BugReportRenderer {
 
         lines.append(isolation)
         lines.append("")
+
+        // The comparison, which is the one thing the run knows that no single failure does.
+        if let differential = report.matrixDifferential {
+            if differential.passing.isEmpty {
+                lines.append("Every server the run tested was affected.")
+            } else {
+                lines.append("The run tested more than one server and they did not agree. Affected: \(differential.failing.map { "`\($0)`" }.joined(separator: ", ")). Not affected: \(differential.passing.map { "`\($0)`" }.joined(separator: ", ")).")
+            }
+
+            lines.append("")
+        }
 
         if !report.hasCaseAttribution {
             lines.append("> This run recorded no event stream, so which entry of the matrix failed could not be established. The table above describes the run, not necessarily the failing entry.")
@@ -196,7 +257,21 @@ public enum BugReportRenderer {
     /// - Returns: `true` if the environment already describes it.
     ///
     private static func isAlreadyDescribed(_ check: PreflightCheck) -> Bool {
-        ["Desktop client", "System policy"].contains(check.subject)
+        ["Desktop client"].contains(check.subject)
+    }
+
+    ///
+    /// How the client under test came to be on this machine, as far as the run established it.
+    ///
+    /// Only the parts the preflight actually checked. Everything else about the installation — that somebody launched it once by hand, that it came from a release rather than a build directory — is true of how this suite is normally used and was never verified by the run holding the report.
+    ///
+    /// - Parameters:
+    ///     - report: The report.
+    ///
+    /// - Returns: The description.
+    ///
+    private static func installationDescription(of _: BugReport) -> String {
+        "Not established by this run. The client was already installed at the path above; this suite does not install it, and the signature and system-policy rows below are all it checked."
     }
 
     ///

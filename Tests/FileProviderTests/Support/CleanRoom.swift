@@ -286,7 +286,7 @@ struct CleanRoom {
 
         try FileManager.default.createDirectory(at: destination, withIntermediateDirectories: true)
 
-        if LocalDirectory.exists(ClientPaths.logDirectory) {
+        if try LocalDirectory.exists(ClientPaths.logDirectory) {
             let copy = destination.appending(path: "client-logs", directoryHint: .isDirectory)
             try? FileManager.default.removeItem(at: copy)
             try FileManager.default.copyItem(at: ClientPaths.logDirectory, to: copy)
@@ -306,7 +306,7 @@ struct CleanRoom {
     /// - Throws: Whatever creating the destination raises. A domain whose log cannot be copied is skipped rather than failing the collection, because a diagnostics bundle missing one log is worth more than no bundle at all.
     ///
     private func copyExtensionLogs(to destination: URL) throws {
-        guard LocalDirectory.exists(ClientPaths.extensionLogs) else {
+        guard try LocalDirectory.exists(ClientPaths.extensionLogs) else {
             return
         }
 
@@ -317,7 +317,7 @@ struct CleanRoom {
                 .appending(path: domain, directoryHint: .isDirectory)
                 .appending(path: "Logs", directoryHint: .isDirectory)
 
-            guard LocalDirectory.exists(logs) else {
+            guard try LocalDirectory.exists(logs) else {
                 continue
             }
 
