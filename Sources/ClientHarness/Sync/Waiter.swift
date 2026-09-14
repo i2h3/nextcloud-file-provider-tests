@@ -30,6 +30,40 @@ public enum Waiter {
     public static let attemptTimeout = Duration.seconds(20)
 
     ///
+    /// Wait until a condition which blocks in the file system holds.
+    ///
+    /// Use this rather than ``waitUntil(_:timeout:attemptTimeout:condition:)`` for anything which reads a File Provider domain — `lstat`, a directory listing, a resource value. Those calls block in the kernel for as long as the provider stays silent, and running enough of them on the cooperative thread pool starves it, at which point the deadline that was supposed to rescue the wait cannot run either.
+    ///
+    /// - Parameters:
+    ///     - expectation: What is awaited, phrased so that it reads as a sentence after "waiting until".
+    ///     - timeout: How long to wait before giving up.
+    ///     - attemptTimeout: How long a single evaluation of the condition may take before it is abandoned. Defaults to ``attemptTimeout``.
+    ///     - condition: The condition to evaluate repeatedly, on a thread of its own.
+    ///
+    /// - Throws: ``WaitTimeoutError`` if the condition does not hold in time, or whatever the condition itself throws.
+    ///
+    public static func waitUntilBlocking(_ expectation: String, timeout: Duration, attemptTimeout: Duration = attemptTimeout, condition: @escaping @Sendable () throws -> Bool) async throws {
+        let deadline = ContinuousClock.now + timeout
+        var pollInterval = initialPollInterval
+
+        while true {
+            // The difference from ``waitUntil`` is the whole point of this being separate: the condition runs on a thread of its own rather than on the cooperative pool. A condition which reads a File Provider domain blocks in the kernel, and enough of those on the pool starve it — which is the failure ``Deadline/runBlocking(within:work:)`` exists for.
+            let attempt = try await Deadline.runBlocking(within: attemptTimeout, work: condition)
+
+            if attempt == true {
+                return
+            }
+
+            guard ContinuousClock.now < deadline else {
+                throw WaitTimeoutError(expectation: expectation, timeout: timeout)
+            }
+
+            try await Task.sleep(for: pollInterval)
+            pollInterval = min(pollInterval * 2, maximumPollInterval)
+        }
+    }
+
+    ///
     /// Wait until a condition holds.
     ///
     /// - Parameters:

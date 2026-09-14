@@ -27,6 +27,27 @@ own app and its sibling extensions — so there is no `waitForChanges`, no `sign
 manual scheduling. Every wait is a condition poll against a deadline, and materialization state is
 read from the `SF_DATALESS` flag in `st_flags`.
 
+### Cases that are generated rather than written
+
+Most suites here are written by hand, and each of them varies one thing — which server it talks to —
+while pinning everything else to whatever the author happened to pick: a file, at the root, already
+materialized, of one size. Those choices are invisible, so what they leave untested is invisible too.
+
+`Sources/ScenarioMatrix/` makes them explicit. It is an axis model — what an item can be, what state
+it can be in, where it lives, what is done to it, where the change originates — together with the
+rules that prune combinations which cannot exist, such as editing the bytes of a file whose content
+was never downloaded. It enumerates cells; it knows nothing about how any of them is established,
+and it has no imports at all, not even Foundation, so it cannot acquire that knowledge by accident.
+
+`Support/ScenarioWorld.swift` is the half it does not have: it puts a real client and a real server
+into the state a cell describes, and then checks that it did. `Support/ScenarioOracle.swift` judges
+what happens next, and **declines by name the clauses it cannot observe** — an assertion which cannot
+fail is worse than a missing one, because it reports as coverage.
+
+A generated suite has a failure mode a hand-written one does not: the set of cases can shrink to
+nothing without a single test failing. `Suites/ScenarioSelectionTests.swift` therefore pins the exact
+rows each generated suite runs, and counts the ones it does not run yet.
+
 ## Machine setup
 
 The client under test is installed at `/Applications/Nextcloud.app` from its signed disk image and

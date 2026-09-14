@@ -24,6 +24,9 @@ let package = Package(
         // Everything which observes and controls the desktop client on this machine. It deliberately has no dependency on Docker or on a Nextcloud server so that its unit tests stay hermetic.
         .target(name: "ClientHarness"),
 
+        // The axis model the end-to-end suites enumerate their cases from. Pure data: no input, no output, no dependency, and deliberately no knowledge of how any of it is established.
+        .target(name: "ScenarioMatrix"),
+
         // Everything which deploys and provisions the Nextcloud servers under test.
         .target(name: "ServerHarness", dependencies: [
             "ClientHarness",
@@ -45,6 +48,7 @@ let package = Package(
         // The end-to-end suites. They are gated on a live environment and skip themselves without one.
         .testTarget(name: "FileProviderTests", dependencies: [
             "ClientHarness",
+            "ScenarioMatrix",
             "ServerHarness",
             .product(name: "NextcloudContainerManager", package: "nextcloud-container-manager"),
             .product(name: "Rainmaker", package: "rainmaker"),
