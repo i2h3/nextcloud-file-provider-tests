@@ -27,7 +27,9 @@ public enum Preflight {
         checks.append(clientInstallation())
         await checks.append(clientSignature())
         await checks.append(clientNotarization(isAllowedToBeRejected: allowingUnnotarizedClient))
+        await checks.append(clientEntitlements())
         checks.append(fullDiskAccess())
+        checks.append(clientApplicationData())
         await checks.append(synchronisationNotBlocked())
         await checks.append(docker())
         checks.append(freeSpace())
@@ -119,6 +121,81 @@ public enum Preflight {
     }
 
     ///
+    /// Check that this process may read the state of the client under test.
+    ///
+    /// A question of its own since macOS 27, which guards the application data of a hardcoded list of applications with `kTCCServiceSystemPolicyAppDataDetailed` and names both `com.nextcloud.desktopclient` and its group container in that list. Until then Full Disk Access covered this and no check was needed. A refusal now arrives as an unreadable configuration and an empty log directory, which is indistinguishable from a client which has never run.
+    ///
+    /// Nothing being there is not a failure. A machine which has not run the client yet has no configuration to read, and this says so rather than demanding a grant for a file which does not exist.
+    ///
+    /// - Returns: The outcome.
+    ///
+    private static func clientApplicationData() -> PreflightCheck {
+        let outcomes = PrivacyProbe.clientApplicationData.map { ($0, $0.inspect()) }
+
+        let refused = outcomes.compactMap { probe, outcome -> String? in
+            guard case let .refused(code) = outcome else { return nil }
+
+            return "\(probe.subject) (\(String(cString: strerror(code))))"
+        }
+
+        guard refused.isEmpty else {
+            return PreflightCheck(
+                subject: "Client data",
+                isSatisfied: false,
+                detail: "Refused \(refused.joined(separator: ", ")). Since macOS 27 the data of this client is protected separately from Full Disk Access.",
+                remedy: "Allow the application which starts the run to read data from other applications, in System Settings, Privacy & Security, and quit it completely afterwards. macOS asks for this once and remembers a refusal, after which everything below this point fails as though the client had never run."
+            )
+        }
+
+        let readable = outcomes.filter { $0.1 == .readable }.map { $0.0.subject }
+
+        guard readable.isEmpty else {
+            return PreflightCheck(subject: "Client data", isSatisfied: true, detail: "readable: \(readable.joined(separator: ", "))")
+        }
+
+        return PreflightCheck(subject: "Client data", isSatisfied: true, detail: "nothing to read, because the client has written no state on this machine yet")
+    }
+
+    ///
+    /// Check that the entitlements the File Provider extension stands on will actually be honoured.
+    ///
+    /// The client reaches its extension through the application group `NKUJUXUJ3B.com.nextcloud.desktopclient`, and macOS grants an entitlement like that one only where the signature authorises it: a Developer ID build carries the authorisation in the certificate, and a development build carries it in an embedded provisioning profile. A development build with neither has the entitlement **ignored** — not refused, ignored — and the client then never asks for a File Provider domain at all.
+    ///
+    /// Older macOS honoured it regardless. macOS 27 does not, and the first run after that upgrade spent forty-three minutes waiting two minutes at a time for a domain nobody had requested, while `trustd` said exactly what was wrong once per extension:
+    ///
+    /// ```
+    /// Entitlement com.apple.security.application-groups=("NKUJUXUJ3B.com.nextcloud.desktopclient")
+    /// is ignored because of invalid application signature or incorrect provisioning profile
+    /// ```
+    ///
+    /// This is a property of the build rather than a defect in it, which is why it is a preflight check and not a test. A suite whose subject cannot register a domain has nothing to measure, and should say so in its first second.
+    ///
+    /// - Returns: The outcome.
+    ///
+    private static func clientEntitlements() async -> PreflightCheck {
+        let profile = ClientPaths.application.appending(path: "Contents/embedded.provisionprofile", directoryHint: .notDirectory)
+
+        guard !FileManager.default.fileExists(atPath: profile.path(percentEncoded: false)) else {
+            return PreflightCheck(subject: "Client entitlements", isSatisfied: true, detail: "authorised by an embedded provisioning profile")
+        }
+
+        let result = try? await ProcessRunner.run(URL(filePath: "/usr/bin/codesign"), arguments: ["-dvvv", ClientPaths.application.path(percentEncoded: false)])
+        let authorities = result?.standardError ?? ""
+
+        guard authorities.contains("Authority=Apple Development") else {
+            // Developer ID and the App Store authorise an application group through the certificate itself, so the absence of a profile says nothing about them.
+            return PreflightCheck(subject: "Client entitlements", isSatisfied: true, detail: "authorised by the signing certificate")
+        }
+
+        return PreflightCheck(
+            subject: "Client entitlements",
+            isSatisfied: false,
+            detail: "This build is signed for development and carries no embedded provisioning profile, so macOS 27 and later ignore its application group entitlement. The File Provider extension cannot be reached and no domain is ever registered.",
+            remedy: "Test a build signed with Developer ID, or re-sign this one with a development provisioning profile which grants the \(ClientPaths.applicationGroupIdentifier) application group and includes this machine. Confirm with: log show --last 5m --predicate 'eventMessage CONTAINS \"application-groups\"'"
+        )
+    }
+
+    ///
     /// Check that this process has Full Disk Access.
     ///
     /// Whether it also lifts the consent macOS asks for before one application may read the files managed by another is the open question this check exists to make answerable: a run which is refused a domain should be able to rule this out first, rather than guessing.
@@ -126,15 +203,30 @@ public enum Preflight {
     /// - Returns: The outcome.
     ///
     private static func fullDiskAccess() -> PreflightCheck {
-        // Listing the directory the domains are mounted in proves nothing: it is not protected, and a process without any privacy grant reads it happily. What is protected is the privacy database itself, which is the conventional way to ask whether this process has Full Disk Access.
-        let probe = ClientPaths.home.appending(path: "Library/Application Support/com.apple.TCC/TCC.db", directoryHint: .notDirectory)
+        let outcomes = PrivacyProbe.fullDiskAccess.map { ($0, $0.inspect()) }
 
-        guard FileManager.default.isReadableFile(atPath: probe.path(percentEncoded: false)) else {
+        guard outcomes.contains(where: { $0.1 == .readable }) else {
+            let refused = outcomes.compactMap { probe, outcome -> String? in
+                guard case let .refused(code) = outcome else { return nil }
+
+                return "\(probe.subject) (\(String(cString: strerror(code))))"
+            }
+
+            guard refused.isEmpty else {
+                return PreflightCheck(
+                    subject: "Full Disk Access",
+                    isSatisfied: false,
+                    detail: "The process supervising this run does not have it. Refused \(refused.joined(separator: ", ")).",
+                    remedy: "Grant Full Disk Access to the application which starts the run, which is usually the terminal, in System Settings, Privacy & Security, and quit it completely afterwards. A privacy grant only takes effect for a newly launched process, and closing its window does not end it."
+                )
+            }
+
+            // Every probe is gone rather than refused, which answers nothing about any grant and is a fault here rather than on this machine. macOS 27 did precisely this by moving the per-user privacy database into a protected container, and the check went on to report a machine which had the grant as a machine which did not.
             return PreflightCheck(
                 subject: "Full Disk Access",
                 isSatisfied: false,
-                detail: "The process supervising this run does not have it.",
-                remedy: "Grant Full Disk Access to the application which starts the run, which is usually the terminal, in System Settings, Privacy & Security, and restart it afterwards. A privacy grant only takes effect for a newly launched process."
+                detail: "Cannot be determined, because none of the locations this check reads are on this system: \(PrivacyProbe.fullDiskAccess.map(\.subject).joined(separator: ", ")).",
+                remedy: "This is a fault in the test suite rather than on this machine. The probes in PrivacyProbe.fullDiskAccess name locations this version of macOS no longer has, and have to be replaced with ones it protects."
             )
         }
 

@@ -177,6 +177,9 @@ struct CleanRoom {
             )
         } catch {
             // A room which fails to build has no teardown to run, so the user it already created would survive the test and make every later run of the same test fail at `user:add` instead of where the trouble actually is. One failure should stay one failure.
+            //
+            // The logs are taken before the client is stopped and for the same reason they are taken in teardown: the next room empties the configuration directory they live in. A room which failed is the room whose logs somebody will want.
+            try? Self.copyLogs(of: user.identifier, in: environment)
             try? await DesktopClient.quit()
             try? await user.delete(on: underTest)
             isOccupied.withLock { $0 = false }
@@ -280,9 +283,22 @@ struct CleanRoom {
     /// - Throws: Whatever copying raises.
     ///
     func copyClientLogs() async throws {
-        let environment = try LiveEnvironment.require()
+        try Self.copyLogs(of: user.identifier, in: LiveEnvironment.require())
+    }
 
-        let destination = Self.roomDirectory(of: user.identifier, in: environment)
+    ///
+    /// Keep the logs of one room, whether or not the room was ever finished.
+    ///
+    /// Static because the room which most needs its logs kept is the one which failed to build, and that room has no instance to call a method on. The first run after macOS 27 failed fourteen times waiting for a domain and left fourteen directories holding a manifest and nothing else, so the account of what the client did in those two minutes had to be reconstructed from the unified log afterwards.
+    ///
+    /// - Parameters:
+    ///     - identifier: The user the room belongs to, which names its directory.
+    ///     - environment: The run to collect into.
+    ///
+    /// - Throws: Whatever copying raises.
+    ///
+    static func copyLogs(of identifier: String, in environment: RunEnvironment) throws {
+        let destination = roomDirectory(of: identifier, in: environment)
 
         try FileManager.default.createDirectory(at: destination, withIntermediateDirectories: true)
 
@@ -305,7 +321,7 @@ struct CleanRoom {
     ///
     /// - Throws: Whatever creating the destination raises. A domain whose log cannot be copied is skipped rather than failing the collection, because a diagnostics bundle missing one log is worth more than no bundle at all.
     ///
-    private func copyExtensionLogs(to destination: URL) throws {
+    private static func copyExtensionLogs(to destination: URL) throws {
         guard try LocalDirectory.exists(ClientPaths.extensionLogs) else {
             return
         }

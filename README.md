@@ -76,6 +76,26 @@ Also needed:
   the parent resolves to no domain — which is why an early version of this check passed on a machine
   that then failed every test.
 
+  On macOS 27 and later this grant also covers the client's own application data, which that release
+  began guarding separately with `kTCCServiceSystemPolicyAppDataDetailed` for a hardcoded list of
+  applications in `/usr/libexec/sandboxd` — a list naming both `com.nextcloud.desktopclient` and its
+  group container `NKUJUXUJ3B/com.nextcloud.desktopclient`. Those are where this suite reads
+  `nextcloud.cfg` and the extension's per-domain logs, so a refusal would cost it the configuration
+  and all of its evidence. Measured on 27.0 (26A428): Full Disk Access alone satisfies it, and no
+  second grant is asked for. It is checked separately anyway, because the two were not known to be
+  one grant and a future release may separate them again.
+
+  The refusal has a shape worth knowing, because it is not the one a missing file has: the container
+  can still be *looked up* and its directories still appear, while every read of anything inside them
+  answers `Operation not permitted`. A check asking whether a path exists passes throughout.
+  `swift run tests doctor` reports this separately, as *Client data*.
+
+  The same release moved the per-user privacy database out of
+  `~/Library/Application Support/com.apple.TCC/` into `/private/var/containers/Data/ProtectedSystem/`,
+  where Full Disk Access does not reach it either. It had been this project's Full Disk Access probe,
+  and when it vanished the check reported a machine that held the grant as one that did not. Probes
+  now report *absent* separately from *refused*, and there is more than one of them.
+
   A read of a domain has four outcomes, and telling them apart is the whole job:
 
   | | |
