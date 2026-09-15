@@ -46,6 +46,15 @@ public struct RunEnvironment: Sendable {
     public static let timeoutScaleVariableName = "FPT_TIMEOUT_SCALE"
 
     ///
+    /// How many times a characterisation suite repeats each of its trials, or nothing to leave those suites switched off.
+    ///
+    /// Characterisation is a different activity from testing and is kept behind its own switch for that reason. A contract test asks whether the client did the right thing once; a characterisation suite asks how often it does, which means running the same thing dozens of times and reporting a rate rather than a verdict. Nobody wants the second on every run, and a rate measured from a single sample is worse than no rate at all.
+    ///
+    /// This exists because a defect turned out to be intermittent. Deletions of items whose content was never downloaded reached the server in some runs and not others, and two runs of twelve cells could say only that the failures were real and were confined to placeholders — not how often, and not what they depend on.
+    ///
+    public static let repetitionsVariableName = "FPT_REPETITIONS"
+
+    ///
     /// The directory collecting logs, attachments and reports of this run.
     ///
     public let artifactsDirectory: URL
@@ -84,6 +93,30 @@ public struct RunEnvironment: Sendable {
     ///
     /// - Returns: `true` if the variables describing a live run are present.
     ///
+    ///
+    /// How many trials a characterisation suite should run, if any were asked for.
+    ///
+    /// - Parameters:
+    ///     - variables: The environment to read. Defaults to this process's own.
+    ///
+    /// - Returns: The number of trials, or `nil` when none was asked for or the value does not name a positive count — in which case the characterisation suites stay switched off rather than guessing at a number.
+    ///
+    public static func repetitions(in variables: [String: String] = ProcessInfo.processInfo.environment) -> Int? {
+        guard let raw = variables[repetitionsVariableName] else {
+            return nil
+        }
+
+        guard let value = Int(raw) else {
+            return nil
+        }
+
+        guard value > 0 else {
+            return nil
+        }
+
+        return value
+    }
+
     public static func isLive(_ variables: [String: String] = ProcessInfo.processInfo.environment) -> Bool {
         guard let matrix = try? rawMatrix(from: variables) else {
             return false

@@ -98,13 +98,8 @@ struct RemoteDeleteTests {
             ScenarioOracle.decline("noDuplicatesOrOrphans", because: ScenarioOracle.posixListingReason)
             ScenarioOracle.decline("contentPolicyInheritance", because: ScenarioOracle.unpinnedReason)
 
-            ScenarioOracle.decline("realizationState", because: """
-            After a deletion there is no item left to be a placeholder or to be materialized, so any assertion about its realization reduces to asserting that it is gone — which is the consistency clause under another name, and is checked there.
-            """)
-
-            ScenarioOracle.decline("contentMatch", because: """
-            Comparing the bytes of the trashed copy needs a download against the server's trash endpoint, which the WebDAV client used here does not expose. Its recorded size is asserted instead, which catches a truncated or empty copy but not a corrupted one.
-            """)
+            ScenarioOracle.decline("realizationState", because: ScenarioOracle.deletedItemReason)
+            ScenarioOracle.decline("contentMatch", because: ScenarioOracle.trashContentReason)
         }
     }
 }

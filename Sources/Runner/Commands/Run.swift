@@ -267,6 +267,15 @@ struct Run: AsyncParsableCommand {
             environment[RunEnvironment.allowUnnotarizedClientVariableName] = "1"
         }
 
+        // The test process is given an environment built here rather than inheriting this one, which is what keeps a run reproducible — but it means anything a person sets on the command line reaches nothing unless it is named. These two are settings of the run rather than of the machine, so they are forwarded when present.
+        for name in [RunEnvironment.repetitionsVariableName, RunEnvironment.timeoutScaleVariableName] {
+            guard let value = ProcessInfo.processInfo.environment[name] else {
+                continue
+            }
+
+            environment[name] = value
+        }
+
         Console.log()
         Console.log("Running the tests against \(servers.map(\.description).joined(separator: ", "))...")
 

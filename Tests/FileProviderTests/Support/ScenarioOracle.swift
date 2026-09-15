@@ -47,6 +47,27 @@ enum ScenarioOracle {
     """
 
     ///
+    /// Why nothing can be pinned down about the realization of an item which has moved.
+    ///
+    static let movedItemReason = """
+    A move pins the state of the two containers rather than of the item, and what a move does to an item's own realization is not specified — a placeholder which stays a placeholder and one which is fetched on arrival are both permitted. Asserting either would pin down something the system is free to decide.
+    """
+
+    ///
+    /// Why nothing can be said about the realization of an item which no longer exists.
+    ///
+    static let deletedItemReason = """
+    After a deletion there is no item left to be a placeholder or to be materialized, so any assertion about its realization reduces to asserting that it is gone — which is the consistency clause under another name, and is checked there.
+    """
+
+    ///
+    /// Why the bytes of a trashed copy are out of reach.
+    ///
+    static let trashContentReason = """
+    Comparing the bytes of the trashed copy needs a download against the server's trash endpoint, which the WebDAV client used here does not expose. Its recorded size is asserted instead, which catches a truncated or empty copy but not a corrupted one.
+    """
+
+    ///
     /// Which clauses have already been reported in this run.
     ///
     /// A declined clause is a property of the suite rather than of a case: it is declined for the same reason every time, and a generated suite runs the same case body dozens of times. Printing it per case buries the run in two identical paragraphs per case — which is not merely noisy, it teaches a reader to skim exactly the part that says what is not covered.

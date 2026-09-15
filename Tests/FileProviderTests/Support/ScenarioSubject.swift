@@ -40,11 +40,45 @@ struct ScenarioSubject {
     let fingerprint: String?
 
     ///
+    /// Where the item is going, for a cell which moves it, as the server spells it.
+    ///
+    /// Present only for a ``ScenarioMatrix/Site/transfer(from:to:)``. A move is the one operation whose cell describes two places rather than one, and the realization it pins is the state of the two **parents** rather than of the item.
+    ///
+    let destinationRemotePath: String?
+
+    ///
+    /// Where the item is going, relative to the domain.
+    ///
+    let destinationLocalPath: String?
+
+    ///
     /// Whether this test ever enumerated the item, for the kinds where that is what realization means.
     ///
     /// A directory is realized by being entered, so for a directory this is the record of whether the precondition holds — and it is a record of what the *test* did rather than of what the item is, which is the honest thing to assert and the only thing available.
     ///
     let wasEnumerated: Bool
+
+    ///
+    /// Where the item would land on the server after a move, under its own name.
+    ///
+    var destinationPath: String? {
+        guard let destinationRemotePath else {
+            return nil
+        }
+
+        return destinationRemotePath == "/" ? "/\(name)" : "\(destinationRemotePath)/\(name)"
+    }
+
+    ///
+    /// Where the item would land in the domain after a move.
+    ///
+    var destinationLocal: String? {
+        guard let destinationLocalPath else {
+            return nil
+        }
+
+        return destinationLocalPath.isEmpty ? name : "\(destinationLocalPath)/\(name)"
+    }
 
     ///
     /// Where the item is on the server before the operation.

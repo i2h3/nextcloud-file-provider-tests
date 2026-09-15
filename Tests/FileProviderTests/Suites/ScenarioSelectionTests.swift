@@ -97,4 +97,26 @@ struct ScenarioSelectionTests {
         The harness can build \(buildable.count) of the \(all.count) cells of phase A. A change to this number is either a primitive gained or coverage lost, and both are worth a deliberate edit here.
         """)
     }
+
+    ///
+    /// Every generated suite runs the twelve cells its quadrant offers this harness.
+    ///
+    /// Asserted together rather than one test per quadrant, because the property that matters is the same for all of them and a reader should be able to see the whole shape at once. Every quadrant offers this harness exactly twelve cells, which is a coincidence of what the blockers happen to prune rather than a rule — and if a change to the model makes it untrue, this is where that shows up.
+    ///
+    @Test(arguments: [
+        ("LocalDelete", LocalDeleteTests.cells, Quadrant(origin: .local, operation: .delete), 52),
+        ("LocalMetadataUpdate", LocalMetadataUpdateTests.cells, Quadrant(origin: .local, operation: .metadataUpdate), 26),
+        ("LocalMove", LocalMoveTests.cells, Quadrant(origin: .local, operation: .move), 24),
+        ("RemoteMove", RemoteMoveTests.cells, Quadrant(origin: .remote, operation: .move), 36),
+    ] as [(String, [Scenario], Quadrant, Int)])
+    func `Each generated quadrant runs the cells it is meant to.`(_ quadrant: (name: String, cells: [Scenario], quadrant: Quadrant, total: Int)) {
+        let all = Generator.scenarios(for: quadrant.quadrant, phase: .a)
+
+        #expect(all.count == quadrant.total, "\(quadrant.name) offers \(all.count) cells where it offered \(quadrant.total).")
+        #expect(quadrant.cells.count == 12, "\(quadrant.name) runs \(quadrant.cells.count) cells rather than twelve.")
+
+        #expect(quadrant.cells == all.filter(ScenarioSelection.isBuildable).sorted { $0.description < $1.description }, """
+        \(quadrant.name) runs a different set of cells from what the shared filter selects, which means the suite has its own filter and the two can drift apart.
+        """)
+    }
 }

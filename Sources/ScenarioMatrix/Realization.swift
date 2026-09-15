@@ -43,6 +43,18 @@ public enum Realization: Hashable, Sendable {
     ///
     /// It exists so that a rule which cares about realization but not about whose realization it is can be written once. ``Constraints`` uses it to refuse a pinned cell which is not materialized, and the generator uses it to decide whether a cell has content worth comparing.
     ///
+    ///
+    /// Whether this describes the containers around the item rather than the item itself.
+    ///
+    /// The distinction decides how a precondition may be established, which is why it is worth asking rather than inferring. An item is realized by being read; a container is realized by being entered — so a wait which lists a container is harmless when the cell pins the item and destroys the precondition when the cell pins the container.
+    ///
+    public var isAboutParents: Bool {
+        switch self {
+            case .item: false
+            case .parent, .parents: true
+        }
+    }
+
     public var levels: [RealizationLevel] {
         switch self {
             case let .item(level), let .parent(level): [level]

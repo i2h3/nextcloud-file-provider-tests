@@ -42,24 +42,32 @@ enum ScenarioWorld {
     /// - Throws: ``ScenarioWorldError`` if the scenario asks for something this harness cannot establish, or whatever the file system, the server or the waiting raises.
     ///
     static func build(_ scenario: Scenario, in room: CleanRoom, named name: String) async throws -> ScenarioSubject {
-        guard case let .single(placement) = scenario.site else {
-            throw ScenarioWorldError.unsupported("a scenario spanning two placements, which only a move has")
-        }
-
-        guard placement.container.type == .standard else {
+        for placement in scenario.site.placements where placement.container.type != .standard {
             throw ScenarioWorldError.unsupported("the \(placement.container.type.rawValue) container, which needs sharing or group-folder provisioning this harness does not have")
         }
 
-        guard case let .item(level) = scenario.realization else {
-            throw ScenarioWorldError.unsupported("a realization which describes something other than the item itself")
-        }
+        let source = scenario.site.placements[0]
 
         if let trash = scenario.trash {
             try await confirmTrash(trash, on: room)
         }
 
+        // A move's cell pins the state of its containers, so the source container is entered only if the cell says it should be. Entering it regardless is how the first version of this quietly measured the materialized case for every cell claiming a dataless one.
+        let sourceLevel = scenario.realization.isAboutParents ? scenario.realization.levels.first : .materialized
+
         let (parentRemotePath, parentLocalPath) = try await ScenarioWorldError.doing("creating the container the item goes in") {
-            try await makeParent(placement.location, in: room)
+            try await makeParent(source.location, entering: sourceLevel != .dataless, in: room)
+        }
+
+        // A move needs its destination to exist before the item is created, because a cell may ask for that destination to be left unentered afterwards and building it later would be the enumeration it is meant to avoid.
+        var destination: (remote: String, local: String)?
+
+        if case let .transfer(_, to) = scenario.site {
+            let destinationLevel = scenario.realization.levels.count > 1 ? scenario.realization.levels[1] : .materialized
+
+            destination = try await ScenarioWorldError.doing("creating the container the item moves into") {
+                try await makeParent(to.location, entering: destinationLevel != .dataless, in: room)
+            }
         }
 
         try await ScenarioWorldError.doing("creating the \(scenario.item.kind.rawValue) \"\(name)\" on the server under \"\(parentRemotePath)\"") {
@@ -74,21 +82,68 @@ enum ScenarioWorld {
         let localPath = parentLocalPath.isEmpty ? name : "\(parentLocalPath)/\(name)"
         let url = room.localURL(of: localPath)
 
+        // How the item is awaited depends on what the cell says about its container, and getting this wrong would not fail — it would quietly establish the opposite precondition and pass.
+        let mustNotEnterParent = scenario.realization.levels.first == .dataless && scenario.realization.isAboutParents
+
         try await ScenarioWorldError.doing("waiting for \"\(localPath)\" to reach the client") {
-            // Polling the parent, one level, never the item. A listing is `readdir` plus one `lstat` per entry, so it neither opens nor reads anything.
-            try await Waiter.waitUntilBlocking("\"\(name)\" reaches the client", timeout: LiveEnvironment.scaled(.seconds(180))) {
-                try room.localChildren(of: parentLocalPath).contains { $0.name == name }
+            guard mustNotEnterParent else {
+                // Polling the parent, one level, never the item. A listing is `readdir` plus one `lstat` per entry, so it neither opens nor reads anything.
+                try await Waiter.waitUntilBlocking("\"\(name)\" reaches the client", timeout: LiveEnvironment.scaled(.seconds(180))) {
+                    try room.localChildren(of: parentLocalPath).contains { $0.name == name }
+                }
+
+                return
+            }
+
+            // The container must still be unentered when the operation happens, so the item is awaited by looking it up directly rather than by listing what it is in.
+            //
+            // This rests on an assumption nobody has measured: that a name lookup inside a container which was never enumerated does not drive that container's enumerator. If it is wrong, the lookup either never succeeds — and this wait times out, saying so — or it succeeds by enumerating, in which case the cell silently measures the materialized case instead. The first is loud and the second is why the ledger is asserted immediately afterwards.
+            try await Waiter.waitUntilBlocking("\"\(localPath)\" can be looked up without entering its container", timeout: LiveEnvironment.scaled(.seconds(180))) {
+                try LocalNode.at(url) != nil
+            }
+
+            guard !room.ledger.hasEnumerated(room.localURL(of: parentLocalPath)) else {
+                throw ScenarioWorldError.unsupported("""
+                a container which stays unentered while the item inside it is awaited: the wait entered "\(parentLocalPath)" after all, so the cell would have measured a materialized container while claiming a dataless one
+                """)
             }
         }
 
-        let wasEnumerated = try await ScenarioWorldError.doing("bringing \"\(localPath)\" to \(level.rawValue)") {
-            try await realize(level, kind: scenario.item.kind, at: url, path: localPath, in: room)
+        let wasEnumerated: Bool
+
+        switch scenario.realization {
+            case let .item(level):
+                wasEnumerated = try await ScenarioWorldError.doing("bringing \"\(localPath)\" to \(level.rawValue)") {
+                    try await realize(level, kind: scenario.item.kind, at: url, path: localPath, in: room)
+                }
+
+            case let .parents(sourceLevel, destinationLevel):
+                // A move pins the state of the two containers and says nothing about the item, which arrives as a placeholder and is left as one.
+                try await ScenarioWorldError.doing("bringing the source container \"\(parentLocalPath.isEmpty ? "/" : parentLocalPath)\" to \(sourceLevel.rawValue)") {
+                    try await realizeContainer(sourceLevel, path: parentLocalPath, in: room)
+                }
+
+                try await ScenarioWorldError.doing("bringing the destination container \"\((destination?.local).map { $0.isEmpty ? "/" : $0 } ?? "/")\" to \(destinationLevel.rawValue)") {
+                    try await realizeContainer(destinationLevel, path: destination?.local ?? "", in: room)
+                }
+
+                wasEnumerated = false
+
+            case .parent:
+                throw ScenarioWorldError.unsupported("a realization describing the parent of an item which does not exist yet, which only a create has")
         }
 
         let remotePath = parentRemotePath == "/" ? "/\(name)" : "\(parentRemotePath)/\(name)"
+        var fingerprint: String?
 
-        let fingerprint = try await ScenarioWorldError.doing("confirming \"\(localPath)\" really is \(level.rawValue)") {
-            try await verify(level, scenario: scenario, at: url, remotePath: remotePath, in: room, wasEnumerated: wasEnumerated)
+        if case let .item(level) = scenario.realization {
+            fingerprint = try await ScenarioWorldError.doing("confirming \"\(localPath)\" really is \(level.rawValue)") {
+                try await verify(level, scenario: scenario, at: url, remotePath: remotePath, in: room, wasEnumerated: wasEnumerated)
+            }
+        } else if scenario.item.kind == .file {
+            fingerprint = try await ScenarioWorldError.doing("reading back the content of \"\(remotePath)\"") {
+                try await room.remoteFingerprint(of: remotePath)
+            }
         }
 
         return ScenarioSubject(
@@ -97,6 +152,8 @@ enum ScenarioWorld {
             parentLocalPath: parentLocalPath,
             before: before,
             fingerprint: fingerprint,
+            destinationRemotePath: destination?.remote,
+            destinationLocalPath: destination?.local,
             wasEnumerated: wasEnumerated
         )
     }
@@ -138,29 +195,37 @@ enum ScenarioWorld {
     ///
     /// - Parameters:
     ///     - location: Where the item goes.
+    ///     - entering: Whether the container may be listed once to reveal what is in it. False for a cell which pins it as dataless.
     ///     - room: The room.
     ///
     /// - Returns: The container as the server spells it, and as the domain spells it.
     ///
     /// - Throws: Whatever creating or waiting raises.
     ///
-    private static func makeParent(_ location: Location, in room: CleanRoom) async throws -> (remote: String, local: String) {
+    private static func makeParent(_ location: Location, entering: Bool, in room: CleanRoom) async throws -> (remote: String, local: String) {
         guard location == .subdirectory else {
             return ("/", "")
         }
 
         let name = "box"
 
-        // One `MKCOL`, so a deeper path would need a call per level. One level is the whole axis: the model distinguishes only root from not-root.
-        try await room.server.createDirectory("/\(name)")
-        _ = try await room.waitForRemoteEntry(named: name)
+        // Created only if it is not already there, so that a room may build more than one world. A suite which repeats a cell to measure how often something happens builds dozens in the same room, and the first version of this threw on the second — which the characterisation suite counted as nineteen trials in twenty dropped before measuring, and reported as such rather than as a rate.
+        let existing = try await room.remoteChildren().contains { $0.name == name && $0.isDirectory }
+
+        if !existing {
+            // One `MKCOL`, so a deeper path would need a call per level. One level is the whole axis: the model distinguishes only root from not-root.
+            try await room.server.createDirectory("/\(name)")
+            _ = try await room.waitForRemoteEntry(named: name)
+        }
 
         try await Waiter.waitUntilBlocking("\"\(name)\" reaches the client", timeout: LiveEnvironment.scaled(.seconds(180))) {
             try room.localChildren().contains { $0.name == name && $0.kind == .directory }
         }
 
-        // Entered deliberately and exactly once. The model pins only the item's realization for this quadrant, so the container's own state is unconstrained — and the item must be revealed by something, which is this.
-        _ = try room.localChildren(of: name)
+        // Entered deliberately and exactly once, where the cell permits it. For a cell which pins this container as dataless it must not be entered at all, and the item inside it is found by looking its path up instead.
+        if entering {
+            _ = try room.localChildren(of: name)
+        }
 
         return ("/\(name)", name)
     }
@@ -240,6 +305,37 @@ enum ScenarioWorld {
 
             case .unknown, .evicted, .materializedDeep:
                 throw ScenarioWorldError.unsupported("the realization level \(level.rawValue), which this harness cannot yet establish and verify")
+        }
+    }
+
+    ///
+    /// Bring a container to the level of realization a move's cell asks of it.
+    ///
+    /// Containers are realized by being entered, so `materialized` is one listing and `dataless` is the deliberate absence of one. There is nothing else to do, which is exactly why this is the half of the world that is easiest to destroy by accident: any wait which polls a listing of the container establishes the state it was supposed to preserve.
+    ///
+    /// The domain root is a special case and not one this has to handle. It is enumerated once while the room is built, before any test body runs, so a cell asking for a materialized root is already satisfied and a cell asking for a dataless root is one the model does not generate.
+    ///
+    /// - Parameters:
+    ///     - level: What the cell asks for.
+    ///     - path: The container, relative to the domain. Empty is the root.
+    ///     - room: The room.
+    ///
+    /// - Throws: ``ScenarioWorldError`` for a level a container cannot be brought to, or whatever listing raises.
+    ///
+    private static func realizeContainer(_ level: RealizationLevel, path: String, in room: CleanRoom) async throws {
+        switch level {
+            case .materialized:
+                _ = try room.localChildren(of: path)
+
+            case .dataless:
+                guard !path.isEmpty else {
+                    throw ScenarioWorldError.unsupported("a dataless domain root, which is enumerated while the room is built and cannot be returned to")
+                }
+
+            // Nothing to do, and nothing may be done: this container must not be listed by anything between here and the operation.
+
+            case .unknown, .evicted, .materializedDeep:
+                throw ScenarioWorldError.unsupported("a container at \(level.rawValue), which this harness cannot establish and confirm")
         }
     }
 
