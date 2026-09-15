@@ -51,7 +51,7 @@ public struct ManagedServer: Sendable {
     ///
     /// Preparation means one thing: the skeleton directory is emptied, so that every user created afterwards starts with a genuinely empty files root. The demo content Nextcloud ships would otherwise appear in every domain and quietly become part of assertions which never asked for it.
     ///
-    /// The host port is whatever the kernel has free. It used to be pinned, because macOS names a File Provider domain after the server it belongs to — `Nextcloud-localhost:<port>-<user>` — and asks for privacy consent once per name, so a port which moved between runs meant a fresh domain to consent to every time. Full Disk Access, which this suite requires anyway, settles that consent for every domain at once and makes the address stability pointless. The two facts hold each other up: were Full Disk Access ever to stop being a requirement, the ports would have to be pinned again.
+    /// The host port is whatever the kernel has free. It used to be pinned, because macOS names a File Provider domain after the server it belongs to — `Nextcloud-127.0.0.1:<port>-<user>` — and asks for privacy consent once per name, so a port which moved between runs meant a fresh domain to consent to every time. Full Disk Access, which this suite requires anyway, settles that consent for every domain at once and makes the address stability pointless. The two facts hold each other up: were Full Disk Access ever to stop being a requirement, the ports would have to be pinned again.
     ///
     /// - Parameters:
     ///     - tag: The Docker image tag of the release to deploy.
@@ -65,7 +65,10 @@ public struct ManagedServer: Sendable {
         let configuration = NextcloudConfiguration(tag: tag, pushNotifications: isPushEnabled)
         let container = try await NextcloudContainerManager.deploy(configuration: configuration)
 
-        guard let address = URL(string: "http://localhost:\(container.port)") else {
+        // The loopback address is spelled out rather than named. `localhost` resolves to both `::1` and `127.0.0.1`, the container runtime publishes its port on IPv4 only, and the client — unlike curl, which falls back between the two — waits on the IPv6 attempt until whatever asked it gives up. What that looks like from outside is an account setup which sends one request and never logs a reply, then a File Provider domain which never appears, and it cost a day of looking at privacy grants, entitlements and code signatures before the wizard was pointed at `127.0.0.1` by hand and connected at once.
+        //
+        // A name would be friendlier to read in a log. It is the wrong trade: the address below is a fact about where the container is listening, and a name is a question asked of a resolver whose answer has already been wrong once.
+        guard let address = URL(string: "http://127.0.0.1:\(container.port)") else {
             try? await NextcloudContainerManager.delete(container.id)
 
             throw ManagedServerError.addressNotFormable(port: container.port)

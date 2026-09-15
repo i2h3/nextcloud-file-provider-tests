@@ -27,7 +27,6 @@ public enum Preflight {
         checks.append(clientInstallation())
         await checks.append(clientSignature())
         await checks.append(clientNotarization(isAllowedToBeRejected: allowingUnnotarizedClient))
-        await checks.append(clientEntitlements())
         checks.append(fullDiskAccess())
         checks.append(clientApplicationData())
         await checks.append(synchronisationNotBlocked())
@@ -154,45 +153,6 @@ public enum Preflight {
         }
 
         return PreflightCheck(subject: "Client data", isSatisfied: true, detail: "nothing to read, because the client has written no state on this machine yet")
-    }
-
-    ///
-    /// Check that the entitlements the File Provider extension stands on will actually be honoured.
-    ///
-    /// The client reaches its extension through the application group `NKUJUXUJ3B.com.nextcloud.desktopclient`, and macOS grants an entitlement like that one only where the signature authorises it: a Developer ID build carries the authorisation in the certificate, and a development build carries it in an embedded provisioning profile. A development build with neither has the entitlement **ignored** — not refused, ignored — and the client then never asks for a File Provider domain at all.
-    ///
-    /// Older macOS honoured it regardless. macOS 27 does not, and the first run after that upgrade spent forty-three minutes waiting two minutes at a time for a domain nobody had requested, while `trustd` said exactly what was wrong once per extension:
-    ///
-    /// ```
-    /// Entitlement com.apple.security.application-groups=("NKUJUXUJ3B.com.nextcloud.desktopclient")
-    /// is ignored because of invalid application signature or incorrect provisioning profile
-    /// ```
-    ///
-    /// This is a property of the build rather than a defect in it, which is why it is a preflight check and not a test. A suite whose subject cannot register a domain has nothing to measure, and should say so in its first second.
-    ///
-    /// - Returns: The outcome.
-    ///
-    private static func clientEntitlements() async -> PreflightCheck {
-        let profile = ClientPaths.application.appending(path: "Contents/embedded.provisionprofile", directoryHint: .notDirectory)
-
-        guard !FileManager.default.fileExists(atPath: profile.path(percentEncoded: false)) else {
-            return PreflightCheck(subject: "Client entitlements", isSatisfied: true, detail: "authorised by an embedded provisioning profile")
-        }
-
-        let result = try? await ProcessRunner.run(URL(filePath: "/usr/bin/codesign"), arguments: ["-dvvv", ClientPaths.application.path(percentEncoded: false)])
-        let authorities = result?.standardError ?? ""
-
-        guard authorities.contains("Authority=Apple Development") else {
-            // Developer ID and the App Store authorise an application group through the certificate itself, so the absence of a profile says nothing about them.
-            return PreflightCheck(subject: "Client entitlements", isSatisfied: true, detail: "authorised by the signing certificate")
-        }
-
-        return PreflightCheck(
-            subject: "Client entitlements",
-            isSatisfied: false,
-            detail: "This build is signed for development and carries no embedded provisioning profile, so macOS 27 and later ignore its application group entitlement. The File Provider extension cannot be reached and no domain is ever registered.",
-            remedy: "Test a build signed with Developer ID, or re-sign this one with a development provisioning profile which grants the \(ClientPaths.applicationGroupIdentifier) application group and includes this machine. Confirm with: log show --last 5m --predicate 'eventMessage CONTAINS \"application-groups\"'"
-        )
     }
 
     ///

@@ -23,6 +23,7 @@ public struct RunEnvironment: Sendable {
     ///
     public static let allowUnnotarizedClientVariableName = "FPT_ALLOW_UNNOTARIZED_CLIENT"
 
+
     ///
     /// The name of the environment variable pointing at the directory collecting logs, attachments and reports.
     ///
@@ -243,7 +244,7 @@ public struct RunEnvironment: Sendable {
     ///
     /// - Returns: `true` if the value means yes.
     ///
-    private static func isTruthy(_ value: String?) -> Bool {
+    static func isTruthy(_ value: String?) -> Bool {
         guard let value else {
             return false
         }

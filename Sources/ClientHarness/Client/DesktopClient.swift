@@ -87,6 +87,13 @@ public enum DesktopClient {
             // A client which stayed up did not necessarily fail; quitting it leads to the same state as the exit it usually performs on its own.
             try await quit()
         }
+
+        // Whether the account was actually configured is a different question from whether the client exited, and until this check existed the two were answered together. A client whose setup request never came back exits — or is quitted here — exactly like one which succeeded, and the run then spent another two minutes waiting for a domain which nothing had asked for, before reporting the absence of the domain rather than the absence of the account.
+        let configured = ClientConfigurationFile.accounts(in: ClientPaths.configurationFile)
+
+        guard configured.contains(where: { $0.hasPrefix("\(account.userIdentifier)@") }) else {
+            throw AccountProvisioningFailure(account: account, configured: configured)
+        }
     }
 
     ///
