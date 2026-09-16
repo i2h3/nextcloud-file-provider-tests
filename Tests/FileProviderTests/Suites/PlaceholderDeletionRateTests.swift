@@ -90,11 +90,15 @@ struct PlaceholderDeletionRateTests {
             return []
         }
 
-        guard level == .dataless, cell.item.kind == .file else {
+        guard level == .dataless else {
             return [Trial(cell: cell, arm: .asSpecified)]
         }
 
-        return [Trial(cell: cell, arm: .asSpecified), Trial(cell: cell, arm: .fetchedThenEvicted)]
+        switch cell.item.kind {
+            case .file: return [Trial(cell: cell, arm: .asSpecified), Trial(cell: cell, arm: .fetchedThenEvicted)]
+            case .folderWithChildren: return [Trial(cell: cell, arm: .asSpecified), Trial(cell: cell, arm: .listedNotFetched)]
+            default: return [Trial(cell: cell, arm: .asSpecified)]
+        }
     }
 
     ///
@@ -116,6 +120,15 @@ struct PlaceholderDeletionRateTests {
         /// A dataless item which was fetched and then evicted, so that it has been through the provider without keeping its content.
         ///
         case fetchedThenEvicted
+
+        ///
+        /// A dataless folder which was listed once and whose children were left where they were.
+        ///
+        /// The same question as ``fetchedThenEvicted`` asks of a file, asked of a folder, because a folder cannot be asked it the same way: content can be evicted and an enumeration cannot be undone, so there is no arm which has listed the folder and then returns it to never having been listed.
+        ///
+        /// What can be done is to stop halfway. A dataless folder has never been listed and its children have never been fetched; a materialized one has had both. This lists it exactly once and fetches nothing, which separates the two — if deletions stop being lost, what protects the folder is the system having learned what is inside it, and if they keep being lost it is the children's content.
+        ///
+        case listedNotFetched
     }
 
     ///
@@ -158,6 +171,11 @@ struct PlaceholderDeletionRateTests {
                 }
 
                 let url = room.localURL(of: subject.localPath(of: name))
+
+                if arm == .listedNotFetched {
+                    // One listing and nothing else. `children(of:)` records the enumeration in the room's ledger, which is what the rest of the suite relies on to know that a container was entered, so this arm is visible there rather than being an untracked read behind the ledger's back.
+                    _ = try LocalDirectory.children(of: url, ledger: room.ledger)
+                }
 
                 if arm == .fetchedThenEvicted {
                     // Through the provider and back out again: the content is fetched and then dropped, leaving an item with no bytes on disk which the provider has nonetheless been asked about.

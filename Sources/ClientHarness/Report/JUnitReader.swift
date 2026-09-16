@@ -26,6 +26,32 @@ public enum JUnitReader {
     public static let fileName = "results-swift-testing.xml"
 
     ///
+    /// Whether the report says that any test ran at all.
+    ///
+    /// A mistyped filter matches nothing, and the test process then exits successfully having done nothing, mentioning it only in a warning. Without this a typo reads as a clean run of the whole suite, which is the most expensive way to be told nothing.
+    ///
+    /// The report holds one `testsuite` element per testing system, and a toolchain which ran no XCTest tests still writes an empty one for it. Asking whether the text anywhere contains `tests="0"` therefore finds that empty element and calls a green run empty — which is what it did, to three passing runs in a row, once the toolchain started emitting it.
+    ///
+    /// - Parameters:
+    ///     - url: The file to read.
+    ///
+    /// - Returns: `false` only when the report is readable and every suite in it ran nothing. An absent or unreadable report counts as having run, because failing a green run over a reporting problem would be worse than missing this.
+    ///
+    public static func ranAnyTests(in url: URL) -> Bool {
+        guard let contents = try? String(contentsOf: url, encoding: .utf8) else {
+            return true
+        }
+
+        let counts = contents.matches(of: /tests="([0-9]+)"/).compactMap { Int($0.1) }
+
+        guard !counts.isEmpty else {
+            return true
+        }
+
+        return counts.contains { $0 > 0 }
+    }
+
+    ///
     /// Read the failures a run recorded.
     ///
     /// - Parameters:
