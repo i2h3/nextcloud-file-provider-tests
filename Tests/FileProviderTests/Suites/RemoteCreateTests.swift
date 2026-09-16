@@ -76,11 +76,18 @@ struct RemoteCreateTests {
                     """)
 
                 case .folderWithChildren:
-                    let children = try room.localChildren(of: site.localPath(of: name))
+                    // Awaited for the same reason the client-to-server direction awaits it: the folder arriving says nothing about what is inside it yet, and a listing read the moment the folder appears finds an empty one.
+                    do {
+                        try await Waiter.waitUntilBlocking("the file inside \"\(name)\" reaches the client", timeout: LiveEnvironment.scaled(.seconds(180))) {
+                            try room.localChildren(of: site.localPath(of: name)).contains { $0.name == ScenarioWorld.childFixtureName }
+                        }
+                    } catch is WaitTimeoutError {
+                        let children = try room.localChildren(of: site.localPath(of: name))
 
-                    #expect(children.contains { $0.name == ScenarioWorld.childFixtureName }, """
-                    The folder arrived without the file inside it, so a person who opens it finds it empty. It holds: \(children.map(\.name).sorted().joined(separator: ", ")).
-                    """)
+                        Issue.record("""
+                        The folder arrived without the file inside it, so a person who opens it finds it empty. It holds: \(children.map(\.name).sorted().joined(separator: ", ")).
+                        """)
+                    }
 
                 case .folderEmpty, .bundle:
                     break

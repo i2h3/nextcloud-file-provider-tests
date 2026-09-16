@@ -89,9 +89,14 @@ struct LocalCreateTests {
                     """)
 
                 case .folderWithChildren:
-                    let children = try await room.remoteChildren(of: site.remotePath(of: name))
+                    // Awaited rather than read once. The folder and the file inside it are two uploads, and the wait above only proves the first of them happened — so reading the listing straight afterwards catches a folder which is empty because its child is still on its way. The first run of this suite did exactly that and recorded it as the client losing a file.
+                    do {
+                        try await Waiter.poll("the file inside \"\(name)\" reaches the server", timeout: LiveEnvironment.scaled(.seconds(180))) {
+                            try await room.remoteChildren(of: site.remotePath(of: name)).contains { $0.name == ScenarioWorld.childFixtureName }
+                        }
+                    } catch is WaitTimeoutError {
+                        let children = try await room.remoteChildren(of: site.remotePath(of: name))
 
-                    guard children.contains(where: { $0.name == ScenarioWorld.childFixtureName }) else {
                         Issue.record("""
                         The folder reached the server without the file inside it, so a person who creates a folder with something in it gets an empty folder. It holds: \(children.map(\.name).sorted().joined(separator: ", ")).
                         """)
