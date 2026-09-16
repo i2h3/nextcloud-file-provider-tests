@@ -30,6 +30,13 @@ enum ScenarioWorld {
     static let smallFileSize = 64 * 1024
 
     ///
+    /// The name of the one child a `folderWithChildren` is given.
+    ///
+    /// Shared because a create in the server-to-client direction has to assert that this child arrived, and a suite spelling the name a second time would keep passing after this one changed it.
+    ///
+    static let childFixtureName = "child.bin"
+
+    ///
     /// Build the world a scenario describes, and confirm it was built.
     ///
     /// - Parameters:
@@ -159,6 +166,52 @@ enum ScenarioWorld {
     }
 
     ///
+    /// Build the world a `create` cell describes: the container, and deliberately nothing in it.
+    ///
+    /// The other quadrants establish an item and hand it over. This one must not: the item is what the test is about to make, and a world which created it first would be testing something else entirely. What a create pins instead is the container — ``ScenarioMatrix/Realization/parent(_:)`` rather than ``ScenarioMatrix/Realization/item(_:)`` — and that is the whole precondition.
+    ///
+    /// The dataless container is the case worth the trouble. A cell asking for one is asking whether the client can accept a new item in a folder it has never listed, which is the ordinary situation of a user saving a file into a synced folder they have not opened in this session. Establishing it means not entering the container, which in turn means the suite may not find its way to the item by listing what it is in.
+    ///
+    /// - Parameters:
+    ///     - scenario: The cell to establish the precondition of.
+    ///     - room: The room to build it in.
+    ///
+    /// - Returns: The container which was established.
+    ///
+    /// - Throws: ``ScenarioWorldError`` if the scenario asks for something this harness cannot establish, or whatever the file system, the server or the waiting raises.
+    ///
+    static func prepareCreation(_ scenario: Scenario, in room: CleanRoom) async throws -> ScenarioCreationSite {
+        guard case let .parent(level) = scenario.realization else {
+            throw ScenarioWorldError.unsupported("a realization which does not describe the container an item is created into, which is the only shape a create has")
+        }
+
+        for placement in scenario.site.placements where placement.container.type != .standard {
+            throw ScenarioWorldError.unsupported("the \(placement.container.type.rawValue) container, which needs sharing or group-folder provisioning this harness does not have")
+        }
+
+        if let trash = scenario.trash {
+            try await confirmTrash(trash, on: room)
+        }
+
+        let (remote, local) = try await ScenarioWorldError.doing("creating the container the item is created in") {
+            try await makeParent(scenario.site.target.location, entering: level != .dataless, in: room)
+        }
+
+        try await ScenarioWorldError.doing("bringing the container \"\(local.isEmpty ? "/" : local)\" to \(level.rawValue)") {
+            try await realizeContainer(level, path: local, in: room)
+        }
+
+        // Confirmed rather than assumed, for the same reason every other precondition here is. A cell which claims a dataless container and got a materialized one does not fail — it passes, having measured the wrong thing, and reports as coverage.
+        if level == .dataless, room.ledger.hasEnumerated(room.localURL(of: local)) {
+            throw ScenarioWorldError.unsupported("""
+            a container which stays unentered: "\(local)" was listed while it was being established, so the cell would have measured a materialized container while claiming a dataless one
+            """)
+        }
+
+        return ScenarioCreationSite(parentRemotePath: remote, parentLocalPath: local, wasEntered: level != .dataless)
+    }
+
+    ///
     /// Confirm the server really does what the cell assumes about its trash bin.
     ///
     /// A cell which says `trash:with` is not describing a wish. It is describing a server, and whether that server keeps deleted items is a setting an administrator can turn off — `files_trashbin` is an application like any other on a Nextcloud server, and the client's own extension branches on `capabilities.files.undelete` rather than assuming it.
@@ -243,7 +296,7 @@ enum ScenarioWorld {
     ///
     /// - Throws: ``ScenarioWorldError`` for a kind this harness cannot build, or whatever uploading raises.
     ///
-    private static func createItem(_ scenario: Scenario, named name: String, at parent: String, in room: CleanRoom) async throws {
+    static func createItem(_ scenario: Scenario, named name: String, at parent: String, in room: CleanRoom) async throws {
         let path = parent == "/" ? "/\(name)" : "\(parent)/\(name)"
 
         switch scenario.item.kind {
@@ -262,7 +315,7 @@ enum ScenarioWorld {
             case .folderWithChildren:
                 try await room.server.createDirectory(path)
 
-                try await ServerWorkspace.withFixture(named: "child.bin", size: smallFileSize, seed: 72) { source, _ in
+                try await ServerWorkspace.withFixture(named: childFixtureName, size: smallFileSize, seed: 72) { source, _ in
                     try await room.server.upload(source, to: path, force: true)
                 }
 

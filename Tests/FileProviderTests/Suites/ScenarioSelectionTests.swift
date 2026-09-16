@@ -99,21 +99,25 @@ struct ScenarioSelectionTests {
     }
 
     ///
-    /// Every generated suite runs the twelve cells its quadrant offers this harness.
+    /// Every generated suite runs the cells its quadrant offers this harness.
     ///
-    /// Asserted together rather than one test per quadrant, because the property that matters is the same for all of them and a reader should be able to see the whole shape at once. Every quadrant offers this harness exactly twelve cells, which is a coincidence of what the blockers happen to prune rather than a rule — and if a change to the model makes it untrue, this is where that shows up.
+    /// Asserted together rather than one test per quadrant, because the property that matters is the same for all of them and a reader should be able to see the whole shape at once.
+    ///
+    /// Both counts are pinned per quadrant. The first four quadrants each offer exactly twelve cells, which read for a while like a rule and is a coincidence of what the blockers happen to prune: a create pins its **container** rather than its item, the container lattice is smaller than the item lattice, and the create quadrants therefore offer nine. A number changing here is either a primitive gained or coverage lost, and both are worth a deliberate edit.
     ///
     @Test(arguments: [
-        ("LocalDelete", LocalDeleteTests.cells, Quadrant(origin: .local, operation: .delete), 52),
-        ("LocalMetadataUpdate", LocalMetadataUpdateTests.cells, Quadrant(origin: .local, operation: .metadataUpdate), 26),
-        ("LocalMove", LocalMoveTests.cells, Quadrant(origin: .local, operation: .move), 24),
-        ("RemoteMove", RemoteMoveTests.cells, Quadrant(origin: .remote, operation: .move), 36),
-    ] as [(String, [Scenario], Quadrant, Int)])
-    func `Each generated quadrant runs the cells it is meant to.`(_ quadrant: (name: String, cells: [Scenario], quadrant: Quadrant, total: Int)) {
+        ("LocalDelete", LocalDeleteTests.cells, Quadrant(origin: .local, operation: .delete), 52, 12),
+        ("LocalMetadataUpdate", LocalMetadataUpdateTests.cells, Quadrant(origin: .local, operation: .metadataUpdate), 26, 12),
+        ("LocalMove", LocalMoveTests.cells, Quadrant(origin: .local, operation: .move), 24, 12),
+        ("RemoteMove", RemoteMoveTests.cells, Quadrant(origin: .remote, operation: .move), 36, 12),
+        ("LocalCreate", LocalCreateTests.cells, Quadrant(origin: .local, operation: .create), 24, 9),
+        ("RemoteCreate", RemoteCreateTests.cells, Quadrant(origin: .remote, operation: .create), 36, 9),
+    ] as [(String, [Scenario], Quadrant, Int, Int)])
+    func `Each generated quadrant runs the cells it is meant to.`(_ quadrant: (name: String, cells: [Scenario], quadrant: Quadrant, total: Int, running: Int)) {
         let all = Generator.scenarios(for: quadrant.quadrant, phase: .a)
 
         #expect(all.count == quadrant.total, "\(quadrant.name) offers \(all.count) cells where it offered \(quadrant.total).")
-        #expect(quadrant.cells.count == 12, "\(quadrant.name) runs \(quadrant.cells.count) cells rather than twelve.")
+        #expect(quadrant.cells.count == quadrant.running, "\(quadrant.name) runs \(quadrant.cells.count) cells where it ran \(quadrant.running).")
 
         #expect(quadrant.cells == all.filter(ScenarioSelection.isBuildable).sorted { $0.description < $1.description }, """
         \(quadrant.name) runs a different set of cells from what the shared filter selects, which means the suite has its own filter and the two can drift apart.

@@ -61,6 +61,13 @@ enum ScenarioOracle {
     """
 
     ///
+    /// Why nothing can be pinned down about the realization of an item which has just been created.
+    ///
+    static let createdItemReason = """
+    A create pins the state of the container rather than of the item, and the model says nothing about which state a newly created item should be in. Both answers are defensible — an item written in the client already has its bytes on disk, and one arriving from the server is free to be a placeholder or to be fetched — so asserting either would pin down something the system is entitled to decide.
+    """
+
+    ///
     /// Why the bytes of a trashed copy are out of reach.
     ///
     static let trashContentReason = """

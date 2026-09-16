@@ -24,8 +24,8 @@ import Testing
 ///
 /// **A trial that cannot be set up is dropped rather than counted.** Establishing the placeholder can itself fail, and those trials say nothing about deletion either way.
 ///
-@Suite("Placeholder deletion rate", .requiresLiveEnvironment, .requiresRepetitions, .serialized, .timeLimit(.minutes(60)))
-struct PlaceholderDeletionRateTests {
+@Suite("Deletion propagation rate", .requiresLiveEnvironment, .requiresRepetitions, .serialized, .timeLimit(.minutes(60)))
+struct DeletionPropagationRateTests {
     ///
     /// How long a single trial waits for the server before calling it a failure.
     ///
@@ -33,9 +33,20 @@ struct PlaceholderDeletionRateTests {
     ///
     /// The length matters more than it looks, because it is paid by the failures rather than the successes: a trial which propagates finishes in about two seconds, and a trial which does not costs the whole timeout. At a quarter of trials failing, the timeout is most of the running time of this suite.
     ///
-    /// A deletion which would have arrived at twelve seconds is miscounted here as lost. That is why the slowest success is reported beside the rate — a distribution creeping towards the limit is the signal that this number is now too small, and it is visible in every run rather than needing to be looked for.
+    /// A deletion which would have arrived at twelve seconds is not counted as lost, but as late: ``graceTimeout`` keeps watching after this expires. The slowest success is still reported beside the rate, because a distribution creeping towards this limit means the fast number is measuring the timeout rather than the client.
     ///
     static let trialTimeout = Duration.seconds(10)
+
+    ///
+    /// How long a trial keeps watching after it has already been counted as not propagating.
+    ///
+    /// The distinction this exists for is the one the suite was silently unable to make. A deletion which never reaches the server is a permanent divergence and silent data retention; a deletion which reaches it at forty seconds is a delay. They are different defects, they live in different code, and a bug report which confuses them sends a maintainer to the wrong half of the client.
+    ///
+    /// Until this existed the suite could not tell them apart *and destroyed the evidence*: a failed trial restored the server immediately, which removed the only thing a late arrival could have been observed in. Every "lost" deletion measured before this was really "not within ten seconds", and nothing more.
+    ///
+    /// Long enough to cover the thirty-second poll interval twice over, since a client which missed a push and falls back to polling is the obvious candidate for an arrival which is late rather than absent.
+    ///
+    static let graceTimeout = Duration.seconds(90)
 
     ///
     /// The cells whose behaviour is being measured.
@@ -151,11 +162,20 @@ struct PlaceholderDeletionRateTests {
             throw ScenarioWorldError.unsupported("a characterisation run, which needs \(RunEnvironment.repetitionsVariableName) set")
         }
 
-        try await CleanRoom.with(underTest, testName: "PlaceholderDeletionRate.\(cell.item.kind.rawValue).\(level.rawValue).\(arm.rawValue)") { room in
+        try await CleanRoom.with(underTest, testName: "DeletionPropagationRate.\(cell.item.kind.rawValue).\(level.rawValue).\(arm.rawValue)") { room in
+            // Reported while the trials run rather than only after them. A cell is twenty repetitions of something slow, each one building a world and waiting on a server, and a suite which prints nothing for half an hour is indistinguishable from one which has stopped.
+            print("  cell: \(cell.description)  [\(arm.rawValue)], \(trials) repetitions")
+
+            func note(_ trial: Int, _ outcome: String) {
+                print("        trial \(trial) of \(trials): \(outcome)")
+            }
+
             var reached = 0
-            var missed = 0
+            var late = 0
+            var lost = 0
             var dropped = 0
             var latencies = [Duration]()
+            var lateLatencies = [Duration]()
 
             for trial in 1 ... trials {
                 let name = cell.item.kind == .file ? "trial-\(trial).bin" : "trial-\(trial)"
@@ -166,6 +186,7 @@ struct PlaceholderDeletionRateTests {
                 } catch {
                     // The world would not build, so this trial is a sample of nothing. Counting it either way would put a fault in the setting up into a number about the client.
                     dropped += 1
+                    note(trial, "dropped, because its world would not build: \(error)")
 
                     continue
                 }
@@ -184,6 +205,7 @@ struct PlaceholderDeletionRateTests {
                     // `evict` reports whether the system accepted the request rather than throwing, and an arm which silently failed to evict would be the materialized arm wearing another name — which is precisely the confusion this arm exists to resolve.
                     guard Materialization.evict(url) else {
                         dropped += 1
+                        note(trial, "dropped, because the system would not evict the content it had just fetched")
 
                         continue
                     }
@@ -204,10 +226,35 @@ struct PlaceholderDeletionRateTests {
                         try await !room.remoteChildren(of: subject.parentRemotePath).contains { $0.name == name }
                     }
 
-                    latencies.append(ContinuousClock.now - started)
+                    let took = ContinuousClock.now - started
+
+                    latencies.append(took)
                     reached += 1
+                    note(trial, "reached \(underTest) after \(took)")
                 } catch {
-                    missed += 1
+                    // Not yet a loss, only an absence at ten seconds. Watching on is what separates a deletion which never arrives from one which is merely slow, and the two are different defects — the first is a permanent divergence the user cannot see, the second is a delay.
+                    var arrived: Duration?
+
+                    do {
+                        try await Waiter.poll("trial \(trial) reaches the server late", timeout: LiveEnvironment.scaled(Self.graceTimeout)) {
+                            try await !room.remoteChildren(of: subject.parentRemotePath).contains { $0.name == name }
+                        }
+
+                        arrived = ContinuousClock.now - started
+                    } catch {
+                        arrived = nil
+                    }
+
+                    if let arrived {
+                        late += 1
+                        lateLatencies.append(arrived)
+                        note(trial, "reached \(underTest) LATE, after \(arrived)")
+
+                        continue
+                    }
+
+                    lost += 1
+                    note(trial, "NOT reached within \(LiveEnvironment.scaled(Self.graceTimeout)), so it is counted as lost")
 
                     // Put the server back where it started, or the next trial is not a fresh sample of anything.
                     //
@@ -218,7 +265,7 @@ struct PlaceholderDeletionRateTests {
                 }
             }
 
-            let counted = reached + missed
+            let counted = reached + late + lost
 
             guard counted > 0 else {
                 Issue.record("Every trial of \(cell.description) failed to build, so nothing was measured.")
@@ -228,11 +275,14 @@ struct PlaceholderDeletionRateTests {
 
             let percentage = Double(reached) / Double(counted) * 100
             let slowest = latencies.max().map { "\($0)" } ?? "—"
+            let slowestLate = lateLatencies.max().map { "\($0)" } ?? "—"
 
             print("""
               rate: \(cell.description)  [\(arm.rawValue)]
-                    \(reached) of \(counted) deletions reached \(underTest) (\(String(format: "%.0f", percentage))%), \(dropped) trial\(dropped == 1 ? "" : "s") dropped before measuring
-                    slowest success \(slowest), within one room and one client session rather than across fresh ones
+                    \(reached) of \(counted) deletions reached \(underTest) within \(LiveEnvironment.scaled(Self.trialTimeout)) (\(String(format: "%.0f", percentage))%)
+                    \(late) arrived late, the slowest after \(slowestLate); \(lost) never arrived within a further \(LiveEnvironment.scaled(Self.graceTimeout))
+                    \(dropped) trial\(dropped == 1 ? "" : "s") dropped before measuring, slowest on-time success \(slowest)
+                    rates hold within one room and one client session rather than across fresh ones
             """)
         }
     }
