@@ -112,6 +112,8 @@ struct ScenarioSelectionTests {
         ("RemoteMove", RemoteMoveTests.cells, Quadrant(origin: .remote, operation: .move), 36, 12),
         ("LocalCreate", LocalCreateTests.cells, Quadrant(origin: .local, operation: .create), 24, 9),
         ("RemoteCreate", RemoteCreateTests.cells, Quadrant(origin: .remote, operation: .create), 36, 9),
+        ("LocalContentUpdate", LocalContentUpdateTests.cells, Quadrant(origin: .local, operation: .contentUpdate), 8, 2),
+        ("RemoteContentUpdate", RemoteContentUpdateTests.cells, Quadrant(origin: .remote, operation: .contentUpdate), 24, 4),
     ] as [(String, [Scenario], Quadrant, Int, Int)])
     func `Each generated quadrant runs the cells it is meant to.`(_ quadrant: (name: String, cells: [Scenario], quadrant: Quadrant, total: Int, running: Int)) {
         let all = Generator.scenarios(for: quadrant.quadrant, phase: .a)
