@@ -72,47 +72,69 @@ struct ConcurrentMetadataUpdateTests {
 
             MetricsRecorder.record("concurrent rename", duration: ContinuousClock.now - started, in: room, test: cell.description)
 
-            let names = Set(try await room.remoteChildren(of: subject.parentRemotePath).map(\.name))
-            let member: String?
+            // Both sides are read together, on every attempt, until they agree — and the winner is named from what they agreed on rather than from a snapshot.
+            //
+            // The first version of this read the server once, called that the result, and then waited for the client to match it. It could not work. The only thing that first read proved had happened was this test's own server-side rename, which lands instantly; the client's rename was still in flight and could overtake it afterwards, leaving the test comparing both settled sides against a state neither of them held any more. Ten of twelve cells failed that way, and the two which passed were the two where the snapshot happened to be right.
+            var settled = Set<String>()
+            var converged = true
 
-            switch (names.contains(byClient), names.contains(byServer)) {
-                case (true, true): member = "conflictCopy"
-                case (true, false): member = "localWon"
-                case (false, true): member = "serverWon"
-                case (false, false): member = nil
+            do {
+                try await Waiter.poll("both sides settle on the same name", timeout: LiveEnvironment.scaled(.seconds(240))) {
+                    let remote = Set(try await room.remoteChildren(of: subject.parentRemotePath).map(\.name)).intersection([byClient, byServer])
+
+                    // Listing the domain blocks in the kernel, so it is read on a thread of its own rather than on the cooperative pool.
+                    let listing = try await Deadline.runBlocking(within: LiveEnvironment.scaled(.seconds(30))) {
+                        Set(try room.localChildren(of: subject.parentLocalPath).map(\.name))
+                    }
+
+                    guard let local = listing?.intersection([byClient, byServer]), !remote.isEmpty, remote == local else {
+                        return false
+                    }
+
+                    settled = remote
+
+                    return true
+                }
+            } catch is WaitTimeoutError {
+                converged = false
             }
 
-            // The invariant every permitted result shares, and the only thing this suite is entitled to demand. An item under neither name was renamed out of existence by a system asked twice to keep it under a name.
-            guard let member else {
+            guard converged else {
+                let remote = Set(try await room.remoteChildren(of: subject.parentRemotePath).map(\.name)).intersection([byClient, byServer])
+                let local = Set(try room.localChildren(of: subject.parentLocalPath).map(\.name)).intersection([byClient, byServer])
+
                 Issue.record("""
-                The item was renamed to "\(byClient)" in the client and to "\(byServer)" on the server, and afterwards the server holds neither. The server \(serverAcceptedRename ? "accepted its own rename" : "refused its own rename, so the client's had already arrived"), and the item is gone. It holds: \(names.sorted().joined(separator: ", ")).
+                The item was renamed to "\(byClient)" in the client and to "\(byServer)" on the server, and four minutes later the two sides still disagree about what it is called. The server holds \(remote.isEmpty ? "neither name" : remote.sorted().joined(separator: ", ")) and the client holds \(local.isEmpty ? "neither name" : local.sorted().joined(separator: ", ")). The server \(serverAcceptedRename ? "accepted its own rename" : "refused its own rename, so the client's had already arrived").
+
+                Every result the specification permits has both sides ending up with the same name or names. A file which is called one thing on the server and another on the Mac is none of them.
                 """)
 
                 return
             }
 
+            // The invariant every permitted result shares, and the only thing this suite is entitled to demand beyond convergence.
+            let member: String
+
+            switch (settled.contains(byClient), settled.contains(byServer)) {
+                case (true, true): member = "conflictCopy"
+                case (true, false): member = "localWon"
+                case (false, true): member = "serverWon"
+                case (false, false): return
+            }
+
             UnderdeterminedOutcome.observed(member, for: .conflictResolution, in: cell)
 
             // Common to every permitted result: whatever name it settled under, the item is the same item and its content did not change. A rename resolved by replacing the item is a legal-looking outcome which has thrown away the shares, comments and history the server kept.
-            if member != "conflictCopy", let survivor = try await room.remoteChildren(of: subject.parentRemotePath).first(where: { $0.name == byClient || $0.name == byServer }) {
+            if member != "conflictCopy", let survivor = try await room.remoteChildren(of: subject.parentRemotePath).first(where: { settled.contains($0.name) }) {
                 #expect(survivor.fileIdentifier == subject.before.fileIdentifier, """
                 The item which survived the rename has a different identity from the one which went into it: it was \(subject.before.fileIdentifier ?? "unknown") and is now \(survivor.fileIdentifier ?? "unknown"). Its shares, comments and version history belong to an item which no longer exists.
                 """)
             }
 
-            if let fingerprint = subject.fingerprint, member != "conflictCopy" {
-                let surviving = names.contains(byClient) ? byClient : byServer
-
+            if let fingerprint = subject.fingerprint, member != "conflictCopy", let surviving = settled.first {
                 #expect(try await room.remoteFingerprint(of: subject.remotePath(of: surviving)) == fingerprint, """
                 The content of the item changed while both sides were renaming it, and neither side asked for its content to change.
                 """)
-            }
-
-            // Whichever way it resolved, the two sides have to end up agreeing about it.
-            try await Waiter.waitUntilBlocking("the client agrees with the server about the name", timeout: LiveEnvironment.scaled(.seconds(240))) {
-                let local = Set(try room.localChildren(of: subject.parentLocalPath).map(\.name))
-
-                return local.intersection([byClient, byServer]) == names.intersection([byClient, byServer])
             }
 
             ScenarioOracle.decline("noDuplicatesOrOrphans", because: ScenarioOracle.posixListingReason)
