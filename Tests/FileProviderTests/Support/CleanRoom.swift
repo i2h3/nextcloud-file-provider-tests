@@ -179,7 +179,7 @@ struct CleanRoom {
             // A room which fails to build has no teardown to run, so the user it already created would survive the test and make every later run of the same test fail at `user:add` instead of where the trouble actually is. One failure should stay one failure.
             //
             // The logs are taken before the client is stopped and for the same reason they are taken in teardown: the next room empties the configuration directory they live in. A room which failed is the room whose logs somebody will want.
-            try? Self.copyLogs(of: user.identifier, in: environment)
+            try? await Self.copyLogs(of: user.identifier, in: environment)
             try? await DesktopClient.quit()
             try? await user.delete(on: underTest)
             isOccupied.withLock { $0 = false }
@@ -283,7 +283,7 @@ struct CleanRoom {
     /// - Throws: Whatever copying raises.
     ///
     func copyClientLogs() async throws {
-        try Self.copyLogs(of: user.identifier, in: LiveEnvironment.require())
+        try await Self.copyLogs(of: user.identifier, in: LiveEnvironment.require())
     }
 
     ///
@@ -297,7 +297,7 @@ struct CleanRoom {
     ///
     /// - Throws: Whatever copying raises.
     ///
-    static func copyLogs(of identifier: String, in environment: RunEnvironment) throws {
+    static func copyLogs(of identifier: String, in environment: RunEnvironment) async throws {
         let destination = roomDirectory(of: identifier, in: environment)
 
         try FileManager.default.createDirectory(at: destination, withIntermediateDirectories: true)
@@ -309,6 +309,31 @@ struct CleanRoom {
         }
 
         try copyExtensionLogs(to: destination.appending(path: "extension-logs", directoryHint: .isDirectory))
+
+        await expandArchives(in: destination)
+    }
+
+    ///
+    /// Unpack the log files the client compressed as it rotated them.
+    ///
+    /// The client compresses a log the moment it rotates it, which is right on a user's machine and wrong here. A run's oldest log is often the interesting one — the account being configured, the domain appearing, whatever the extension was doing before the failure — and a compressed file is one `grep` away from being read and therefore one step away from never being read at all. Disk is not the constraint on a machine which deploys Nextcloud in Docker for every run.
+    ///
+    /// Done after the copy rather than instead of it: what the client keeps is left exactly as the client keeps it, and only this suite's copy is unpacked.
+    ///
+    /// - Parameters:
+    ///     - directory: The room's directory, whose logs were just collected.
+    ///
+    private static func expandArchives(in directory: URL) async {
+        guard let entries = FileManager.default.enumerator(at: directory, includingPropertiesForKeys: nil) else {
+            return
+        }
+
+        let archives = entries.compactMap { $0 as? URL }.filter { $0.pathExtension == "gz" }
+
+        for archive in archives {
+            // A diagnostics bundle missing one expansion is worth more than no bundle at all, which is the rule the rest of this collection follows: the archive stays where it is if this fails, still readable by hand.
+            _ = try? await ProcessRunner.run(URL(filePath: "/usr/bin/gunzip"), arguments: ["-f", archive.path(percentEncoded: false)])
+        }
     }
 
     ///
