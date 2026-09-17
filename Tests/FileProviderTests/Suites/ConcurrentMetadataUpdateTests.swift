@@ -39,7 +39,7 @@ struct ConcurrentMetadataUpdateTests {
             throw ScenarioWorldError.unsupported("a realization which does not describe the item")
         }
 
-        try await CleanRoom.with(underTest, testName: "ConcurrentMetadataUpdate.\(cell.item.kind.rawValue).\(level.rawValue)") { room in
+        try await CleanRoom.with(underTest, testName: "ConcurrentMetadataUpdate.\(cell.item.kind.rawValue).\(level.rawValue)", cell: cell.description) { room in
             let isFile = cell.item.kind == .file
             let before = isFile ? "before.bin" : "before"
             let byClient = isFile ? "by-client.bin" : "by-client"

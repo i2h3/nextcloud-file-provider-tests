@@ -51,7 +51,7 @@ struct RemoteDeleteTests {
             throw ScenarioWorldError.unsupported("a realization which does not describe the item")
         }
 
-        try await CleanRoom.with(underTest, testName: "RemoteDelete.\(cell.item.kind.rawValue).\(level.rawValue)") { room in
+        try await CleanRoom.with(underTest, testName: "RemoteDelete.\(cell.item.kind.rawValue).\(level.rawValue)", cell: cell.description) { room in
             let name = ScenarioWorld.name("doomed", for: cell.item.kind)
             let subject = try await ScenarioWorld.build(cell, in: room, named: name)
 

@@ -37,7 +37,7 @@ struct LocalMetadataUpdateTests {
             throw ScenarioWorldError.unsupported("a realization which does not describe the item")
         }
 
-        try await CleanRoom.with(underTest, testName: "LocalMetadataUpdate.\(cell.item.kind.rawValue).\(level.rawValue)") { room in
+        try await CleanRoom.with(underTest, testName: "LocalMetadataUpdate.\(cell.item.kind.rawValue).\(level.rawValue)", cell: cell.description) { room in
             let before = ScenarioWorld.name("before", for: cell.item.kind)
             let after = ScenarioWorld.name("after", for: cell.item.kind)
 

@@ -136,6 +136,8 @@ struct Run: AsyncParsableCommand {
         Console.log()
         Console.log("Artifacts: \(artifactsDirectory.path(percentEncoded: false))")
 
+        writeIndex(in: artifactsDirectory)
+
         guard result.isSuccess else {
             draftReports(in: artifactsDirectory)
 
@@ -145,6 +147,26 @@ struct Run: AsyncParsableCommand {
         // A test process which matched nothing exits successfully and says so only in a warning, so a mistyped filter otherwise reads as a clean run of the whole suite.
         guard JUnitReader.ranAnyTests(in: artifactsDirectory.appending(path: JUnitReader.fileName, directoryHint: .notDirectory)) else {
             throw RunError.noTestsRun(filter: filter)
+        }
+    }
+
+    ///
+    /// Write the page which says what this run did.
+    ///
+    /// Written for every run rather than only for a failing one, and before the failure is thrown, because a run which passed is exactly as worth reading as one which did not — the measurements, the declined clauses and the cells which were never judged are the parts nobody sees in a terminal.
+    ///
+    /// A failure here is reported and then ignored, for the same reason a reporting failure is: a run's result must never be lost to a problem with describing it.
+    ///
+    /// - Parameters:
+    ///     - artifactsDirectory: The directory the run wrote to.
+    ///
+    private func writeIndex(in artifactsDirectory: URL) {
+        do {
+            let url = try RunIndex.write(for: RunEvidence.gather(from: artifactsDirectory))
+
+            Console.log("Overview:  \(url.path(percentEncoded: false))")
+        } catch {
+            Console.log("Could not write the run overview: \(error)")
         }
     }
 

@@ -41,7 +41,7 @@ struct RemoteMoveTests {
             throw ScenarioWorldError.unsupported("a move whose realization does not describe its two containers")
         }
 
-        try await CleanRoom.with(underTest, testName: "RemoteMove.\(cell.item.kind.rawValue).\(source.rawValue)-\(destination.rawValue)") { room in
+        try await CleanRoom.with(underTest, testName: "RemoteMove.\(cell.item.kind.rawValue).\(source.rawValue)-\(destination.rawValue)", cell: cell.description) { room in
             let name = ScenarioWorld.name("travelling", for: cell.item.kind)
             let subject = try await ScenarioWorld.build(cell, in: room, named: name)
 

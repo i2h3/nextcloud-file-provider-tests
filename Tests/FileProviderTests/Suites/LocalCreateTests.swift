@@ -37,7 +37,7 @@ struct LocalCreateTests {
             throw ScenarioWorldError.unsupported("a realization which does not describe the container the item is created in")
         }
 
-        try await CleanRoom.with(underTest, testName: "LocalCreate.\(cell.item.kind.rawValue).\(level.rawValue)") { room in
+        try await CleanRoom.with(underTest, testName: "LocalCreate.\(cell.item.kind.rawValue).\(level.rawValue)", cell: cell.description) { room in
             let name = ScenarioWorld.name("fresh", for: cell.item.kind)
             let site = try await ScenarioWorld.prepareCreation(cell, in: room)
             let url = room.localURL(of: site.localPath(of: name))

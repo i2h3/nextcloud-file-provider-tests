@@ -75,19 +75,38 @@ struct CleanRoom {
     ///     - testName: The test the room belongs to, conventionally `<suite>.<test>`. It names the user.
     ///     - body: The test itself.
     ///
-    /// - Returns: Whatever the body returns.
+    /// - Throws: Whatever building the room, the body or the teardown raises. A cell whose failure is a known limitation of the client throws nothing: the failure is registered as expected and the run continues.
     ///
-    /// - Throws: Whatever building the room, the body or the teardown raises.
+    static func with(_ underTest: ServerUnderTest, testName: String, cell: String? = nil, _ body: @escaping (CleanRoom) async throws -> Void) async throws {
+        // A cell whose feature the client declines is run like any other and its failure registered as expected. Handled here rather than in each suite so that a quadrant written next year inherits it: the alternative is every suite remembering, and the failure mode of remembering is coverage which disappears without anybody noticing.
+        guard let reason = cell.flatMap(KnownLimitation.reason(for:)) else {
+            try await perform(underTest, testName: testName, cell: cell, body)
+
+            return
+        }
+
+        await withKnownIssue(reason) {
+            try await perform(underTest, testName: testName, cell: cell, body)
+        }
+    }
+
     ///
-    @discardableResult
-    static func with<Result>(_ underTest: ServerUnderTest, testName: String, _ body: (CleanRoom) async throws -> Result) async throws -> Result {
-        let room = try await build(underTest, testName: testName)
+    /// Build a room, hand it to the body, and take it down again.
+    ///
+    /// - Parameters:
+    ///     - underTest: The server to build against.
+    ///     - testName: The test the room belongs to.
+    ///     - cell: The cell of the matrix, where the test has one.
+    ///     - body: What to do with the room.
+    ///
+    /// - Throws: Whatever building, the body, or the teardown raises.
+    ///
+    private static func perform(_ underTest: ServerUnderTest, testName: String, cell: String?, _ body: (CleanRoom) async throws -> Void) async throws {
+        let room = try await build(underTest, testName: testName, cell: cell)
 
         do {
-            let result = try await body(room)
+            try await body(room)
             try await room.tearDown()
-
-            return result
         } catch {
             try? await room.tearDown()
 
@@ -106,7 +125,7 @@ struct CleanRoom {
     ///
     /// - Throws: Whatever provisioning the user, launching the client or waiting for the domain raises.
     ///
-    static func build(_ underTest: ServerUnderTest, testName: String) async throws -> CleanRoom {
+    static func build(_ underTest: ServerUnderTest, testName: String, cell: String? = nil) async throws -> CleanRoom {
         let environment = try LiveEnvironment.require()
 
         try isOccupied.withLock { occupied in
@@ -133,6 +152,7 @@ struct CleanRoom {
         // Written now rather than at teardown, so that a room which never finishes being built still says what it was trying to be. Those are the rooms whose logs matter most.
         var manifest = RoomManifest(
             testName: testName,
+            cell: cell,
             testIdentifier: Test.current?.id.description,
             testDisplayName: Test.current?.displayName ?? Test.current?.name,
             user: user.identifier,

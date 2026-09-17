@@ -24,6 +24,7 @@ public struct RunEnvironment: Sendable {
     public static let allowUnnotarizedClientVariableName = "FPT_ALLOW_UNNOTARIZED_CLIENT"
 
 
+
     ///
     /// The name of the environment variable pointing at the directory collecting logs, attachments and reports.
     ///
@@ -244,7 +245,12 @@ public struct RunEnvironment: Sendable {
     ///
     /// - Returns: `true` if the value means yes.
     ///
-    static func isTruthy(_ value: String?) -> Bool {
+    ///
+    /// Whether an environment variable's value reads as an affirmative.
+    ///
+    /// Public because the test target asks the same question of the same variables, and two answers to "is this set" would eventually disagree about `1` against `true` against `yes`.
+    ///
+    public static func isTruthy(_ value: String?) -> Bool {
         guard let value else {
             return false
         }

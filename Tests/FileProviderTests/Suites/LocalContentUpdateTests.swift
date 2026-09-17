@@ -37,7 +37,7 @@ struct LocalContentUpdateTests {
             throw ScenarioWorldError.unsupported("a realization which does not describe the item")
         }
 
-        try await CleanRoom.with(underTest, testName: "LocalContentUpdate.\(cell.item.kind.rawValue).\(level.rawValue)") { room in
+        try await CleanRoom.with(underTest, testName: "LocalContentUpdate.\(cell.item.kind.rawValue).\(level.rawValue)", cell: cell.description) { room in
             let name = "edited.bin"
             let subject = try await ScenarioWorld.build(cell, in: room, named: name)
             let url = room.localURL(of: subject.localPath(of: name))

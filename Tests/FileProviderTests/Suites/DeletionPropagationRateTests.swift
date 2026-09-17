@@ -163,7 +163,7 @@ struct DeletionPropagationRateTests {
             throw ScenarioWorldError.unsupported("a characterisation run, which needs \(RunEnvironment.repetitionsVariableName) set")
         }
 
-        try await CleanRoom.with(underTest, testName: "DeletionPropagationRate.\(cell.item.kind.rawValue).\(level.rawValue).\(arm.rawValue)") { room in
+        try await CleanRoom.with(underTest, testName: "DeletionPropagationRate.\(cell.item.kind.rawValue).\(level.rawValue).\(arm.rawValue)", cell: cell.description) { room in
             // Reported while the trials run rather than only after them. A cell is twenty repetitions of something slow, each one building a world and waiting on a server, and a suite which prints nothing for half an hour is indistinguishable from one which has stopped.
             print("  cell: \(cell.description)  [\(arm.rawValue)], \(trials) repetitions")
 

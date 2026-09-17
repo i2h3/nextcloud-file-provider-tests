@@ -34,6 +34,15 @@ public struct RoomManifest: Codable, Sendable {
     public let testDisplayName: String?
 
     ///
+    /// The cell of the scenario matrix this room was built for.
+    ///
+    /// The room's directory is named after its Nextcloud user, which is derived from the test name and is coarser than the cell: a suite runs several cells through one test function, and two of them can differ only in axes the derived name has no room for. Recording the cell here is what lets a reader go from a failure to the logs of the room it happened in without inferring anything from the ordering.
+    ///
+    /// Absent for the hand-written suites, which are not generated from the matrix and have no cell.
+    ///
+    public let cell: String?
+
+    ///
     /// The Nextcloud user created for this room, which is also the name of its directory.
     ///
     public let user: String
@@ -137,9 +146,10 @@ public struct RoomManifest: Codable, Sendable {
     ///     - server: The server the room runs against.
     ///     - startedAt: When the room began to be built. Defaults to now.
     ///
-    public init(testName: String, testIdentifier: String? = nil, testDisplayName: String? = nil, user: String, server: RunManifestServer, startedAt: Date = Date()) {
+    public init(testName: String, cell: String? = nil, testIdentifier: String? = nil, testDisplayName: String? = nil, user: String, server: RunManifestServer, startedAt: Date = Date()) {
         domainIdentifiers = []
         schemaVersion = 1
+        self.cell = cell
         self.server = server
         self.startedAt = startedAt
         self.testDisplayName = testDisplayName
