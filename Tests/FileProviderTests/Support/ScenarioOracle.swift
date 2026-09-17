@@ -61,6 +61,13 @@ enum ScenarioOracle {
     """
 
     ///
+    /// Why no winner can be named when both sides deleted the same item.
+    ///
+    static let mutualDeletionReason = """
+    The permitted results of this clause — a conflict copy, the server's version winning, the local one winning — name which branch's content survived. A deletion on both sides leaves no content to attribute to a winner: a conflict copy would be visible, and its absence does not distinguish the other two from each other. Recording one of them would be a guess wearing the shape of an observation.
+    """
+
+    ///
     /// Why nothing can be pinned down about the realization of an item which has just been created.
     ///
     static let createdItemReason = """
