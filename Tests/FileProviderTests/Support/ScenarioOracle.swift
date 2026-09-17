@@ -61,6 +61,13 @@ enum ScenarioOracle {
     """
 
     ///
+    /// Why the realization of an empty file cannot be read.
+    ///
+    static let emptyFileReason = """
+    An empty file has nothing to fetch, so the dataless flag is never cleared and no blocks are ever allocated: a placeholder and a materialized copy present the same size, the same flag and the same zero blocks. Every signal this harness has for realization is blind here, and asserting either state would be asserting that an empty file is empty.
+    """
+
+    ///
     /// Why no winner can be named when both sides deleted the same item.
     ///
     static let mutualDeletionReason = """

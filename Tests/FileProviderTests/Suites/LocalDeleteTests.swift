@@ -38,7 +38,7 @@ struct LocalDeleteTests {
         }
 
         try await CleanRoom.with(underTest, testName: "LocalDelete.\(cell.item.kind.rawValue).\(level.rawValue)") { room in
-            let name = cell.item.kind == .file ? "doomed.bin" : "doomed"
+            let name = ScenarioWorld.name("doomed", for: cell.item.kind)
             let subject = try await ScenarioWorld.build(cell, in: room, named: name)
             let url = room.localURL(of: subject.localPath(of: name))
 
@@ -99,8 +99,8 @@ struct LocalDeleteTests {
 
             #expect(entry.isDirectory == (cell.item.kind != .file), "The trashed item changed from a file to a directory or the reverse on its way into the trash.")
 
-            if cell.item.kind == .file, let size = entry.size {
-                #expect(size == UInt64(ScenarioWorld.smallFileSize), "The trashed copy is \(size) bytes where the file was \(ScenarioWorld.smallFileSize).")
+            if cell.item.kind == .file, let size = entry.size, let expected = ScenarioWorld.bytes(for: cell.item.size) {
+                #expect(size == UInt64(expected), "The trashed copy is \(size) bytes where the file was \(expected).")
             }
 
             ScenarioOracle.decline("noDuplicatesOrOrphans", because: ScenarioOracle.posixListingReason)

@@ -38,8 +38,8 @@ struct LocalMetadataUpdateTests {
         }
 
         try await CleanRoom.with(underTest, testName: "LocalMetadataUpdate.\(cell.item.kind.rawValue).\(level.rawValue)") { room in
-            let before = cell.item.kind == .file ? "before.bin" : "before"
-            let after = cell.item.kind == .file ? "after.bin" : "after"
+            let before = ScenarioWorld.name("before", for: cell.item.kind)
+            let after = ScenarioWorld.name("after", for: cell.item.kind)
 
             let subject = try await ScenarioWorld.build(cell, in: room, named: before)
             let oldURL = room.localURL(of: subject.localPath(of: before))

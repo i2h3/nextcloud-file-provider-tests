@@ -46,11 +46,16 @@ struct LocalContentUpdateTests {
             let replacement = ContentFactory.content(size: ScenarioWorld.smallFileSize * 2, seed: 91)
             let expected = ContentFactory.fingerprint(of: replacement)
 
+            // A package's bytes live in a file inside it. The model puts files and bundles in the same class — a content update is legal on both — and this is where that costs a line.
+            let inside = ScenarioWorld.contentComponent(of: cell.item.kind)
+            let contentURL = inside.map { url.appending(path: $0, directoryHint: .notDirectory) } ?? url
+            let contentRemotePath = inside.map { "\(subject.remotePath)/\($0)" } ?? subject.remotePath
+
             let started = ContinuousClock.now
-            try replacement.write(to: url)
+            try replacement.write(to: contentURL)
 
             try await Waiter.poll("the server takes the new content", timeout: LiveEnvironment.scaled(.seconds(180))) {
-                try await room.remoteFingerprint(of: subject.remotePath) == expected
+                try await room.remoteFingerprint(of: contentRemotePath) == expected
             }
 
             MetricsRecorder.record("client to server content update", duration: ContinuousClock.now - started, in: room, test: cell.description)
@@ -69,7 +74,7 @@ struct LocalContentUpdateTests {
                 """)
             }
 
-            let node = try #require(try LocalNode.at(url), "The file is gone from the client after being written to.")
+            let node = try #require(try LocalNode.at(contentURL), "The file is gone from the client after being written to.")
 
             #expect(!node.isDataless, "The file this test wrote to became a placeholder, so the bytes it wrote are no longer on the disk they were written to.")
             #expect(node.size == Int64(replacement.count), "The client reports \(node.size) bytes where \(replacement.count) were written.")

@@ -19,14 +19,18 @@ struct ScenarioSelectionTests {
     /// Twelve of the quadrant's thirty-eight: two realization levels, three kinds of item, two locations. The other twenty-six are excluded by named blockers rather than by oversight — packages, evicted items, deep materialization, filename encodings — and each is a primitive whose absence is countable.
     ///
     @Test
-    func `The remote metadata update suite runs the twelve cells it is meant to.`() {
+    func `The remote metadata update suite runs the cells it is meant to.`() {
         let expected = [
+            "remote metadataUpdate item:dataless kind:bundle at:standard:root",
+            "remote metadataUpdate item:dataless kind:bundle at:standard:subdirectory",
             "remote metadataUpdate item:dataless kind:file size:small at:standard:root",
             "remote metadataUpdate item:dataless kind:file size:small at:standard:subdirectory",
             "remote metadataUpdate item:dataless kind:folderEmpty at:standard:root",
             "remote metadataUpdate item:dataless kind:folderEmpty at:standard:subdirectory",
             "remote metadataUpdate item:dataless kind:folderWithChildren at:standard:root",
             "remote metadataUpdate item:dataless kind:folderWithChildren at:standard:subdirectory",
+            "remote metadataUpdate item:materialized kind:bundle at:standard:root",
+            "remote metadataUpdate item:materialized kind:bundle at:standard:subdirectory",
             "remote metadataUpdate item:materialized kind:file size:small at:standard:root",
             "remote metadataUpdate item:materialized kind:file size:small at:standard:subdirectory",
             "remote metadataUpdate item:materialized kind:folderEmpty at:standard:root",
@@ -50,7 +54,7 @@ struct ScenarioSelectionTests {
         let all = Generator.scenarios(for: Quadrant(origin: .remote, operation: .metadataUpdate), phase: .a)
 
         #expect(all.count == 38)
-        #expect(all.count - RemoteMetadataUpdateTests.cells.count == 26, """
+        #expect(all.count - RemoteMetadataUpdateTests.cells.count == 22, """
         Twenty-six cells of this quadrant are not run. They are blocked on primitives this harness does not have — a package fixture, an observation which separates an evicted item from a placeholder, a recursive materialization walk, a reader for the local-name bounce attribute — and not on anything about the client.
         """)
     }
@@ -63,6 +67,10 @@ struct ScenarioSelectionTests {
     @Test
     func `The remote delete suite runs the cells it is meant to.`() {
         let expected = [
+            "remote delete item:dataless kind:bundle at:standard:root trash:with",
+            "remote delete item:dataless kind:bundle at:standard:root trash:without",
+            "remote delete item:dataless kind:bundle at:standard:subdirectory trash:with",
+            "remote delete item:dataless kind:bundle at:standard:subdirectory trash:without",
             "remote delete item:dataless kind:file size:small at:standard:root trash:with",
             "remote delete item:dataless kind:file size:small at:standard:root trash:without",
             "remote delete item:dataless kind:file size:small at:standard:subdirectory trash:with",
@@ -75,6 +83,10 @@ struct ScenarioSelectionTests {
             "remote delete item:dataless kind:folderWithChildren at:standard:root trash:without",
             "remote delete item:dataless kind:folderWithChildren at:standard:subdirectory trash:with",
             "remote delete item:dataless kind:folderWithChildren at:standard:subdirectory trash:without",
+            "remote delete item:materialized kind:bundle at:standard:root trash:with",
+            "remote delete item:materialized kind:bundle at:standard:root trash:without",
+            "remote delete item:materialized kind:bundle at:standard:subdirectory trash:with",
+            "remote delete item:materialized kind:bundle at:standard:subdirectory trash:without",
             "remote delete item:materialized kind:file size:small at:standard:root trash:with",
             "remote delete item:materialized kind:file size:small at:standard:root trash:without",
             "remote delete item:materialized kind:file size:small at:standard:subdirectory trash:with",
@@ -105,7 +117,7 @@ struct ScenarioSelectionTests {
         let buildable = all.filter(ScenarioSelection.isBuildable)
 
         #expect(all.count == 406)
-        #expect(buildable.count == 158, """
+        #expect(buildable.count == 230, """
         The harness can build \(buildable.count) of the \(all.count) cells of phase A. A change to this number is either a primitive gained or coverage lost, and both are worth a deliberate edit here.
         """)
     }
@@ -118,17 +130,17 @@ struct ScenarioSelectionTests {
     /// Both counts are pinned per quadrant. The first four quadrants each offer exactly twelve cells, which read for a while like a rule and is a coincidence of what the blockers happen to prune: a create pins its **container** rather than its item, the container lattice is smaller than the item lattice, and the create quadrants therefore offer nine. A number changing here is either a primitive gained or coverage lost, and both are worth a deliberate edit.
     ///
     @Test(arguments: [
-        ("LocalDelete", LocalDeleteTests.cells, Quadrant(origin: .local, operation: .delete), 52, 24),
-        ("LocalMetadataUpdate", LocalMetadataUpdateTests.cells, Quadrant(origin: .local, operation: .metadataUpdate), 26, 12),
-        ("LocalMove", LocalMoveTests.cells, Quadrant(origin: .local, operation: .move), 24, 12),
-        ("RemoteMove", RemoteMoveTests.cells, Quadrant(origin: .remote, operation: .move), 36, 12),
-        ("LocalCreate", LocalCreateTests.cells, Quadrant(origin: .local, operation: .create), 24, 9),
-        ("RemoteCreate", RemoteCreateTests.cells, Quadrant(origin: .remote, operation: .create), 36, 9),
-        ("LocalContentUpdate", LocalContentUpdateTests.cells, Quadrant(origin: .local, operation: .contentUpdate), 8, 2),
-        ("RemoteContentUpdate", RemoteContentUpdateTests.cells, Quadrant(origin: .remote, operation: .contentUpdate), 24, 4),
-        ("ConcurrentDelete", ConcurrentDeleteTests.cells, Quadrant(origin: .concurrent, operation: .delete), 52, 24),
-        ("ConcurrentMetadataUpdate", ConcurrentMetadataUpdateTests.cells, Quadrant(origin: .concurrent, operation: .metadataUpdate), 26, 12),
-        ("ConcurrentContentUpdate", ConcurrentContentUpdateTests.cells, Quadrant(origin: .concurrent, operation: .contentUpdate), 8, 2),
+        ("LocalDelete", LocalDeleteTests.cells, Quadrant(origin: .local, operation: .delete), 52, 32),
+        ("LocalMetadataUpdate", LocalMetadataUpdateTests.cells, Quadrant(origin: .local, operation: .metadataUpdate), 26, 16),
+        ("LocalMove", LocalMoveTests.cells, Quadrant(origin: .local, operation: .move), 24, 16),
+        ("RemoteMove", RemoteMoveTests.cells, Quadrant(origin: .remote, operation: .move), 36, 16),
+        ("LocalCreate", LocalCreateTests.cells, Quadrant(origin: .local, operation: .create), 24, 15),
+        ("RemoteCreate", RemoteCreateTests.cells, Quadrant(origin: .remote, operation: .create), 36, 15),
+        ("LocalContentUpdate", LocalContentUpdateTests.cells, Quadrant(origin: .local, operation: .contentUpdate), 8, 6),
+        ("RemoteContentUpdate", RemoteContentUpdateTests.cells, Quadrant(origin: .remote, operation: .contentUpdate), 24, 12),
+        ("ConcurrentDelete", ConcurrentDeleteTests.cells, Quadrant(origin: .concurrent, operation: .delete), 52, 32),
+        ("ConcurrentMetadataUpdate", ConcurrentMetadataUpdateTests.cells, Quadrant(origin: .concurrent, operation: .metadataUpdate), 26, 16),
+        ("ConcurrentContentUpdate", ConcurrentContentUpdateTests.cells, Quadrant(origin: .concurrent, operation: .contentUpdate), 8, 6),
     ] as [(String, [Scenario], Quadrant, Int, Int)])
     func `Each generated quadrant runs the cells it is meant to.`(_ quadrant: (name: String, cells: [Scenario], quadrant: Quadrant, total: Int, running: Int)) {
         let all = Generator.scenarios(for: quadrant.quadrant, phase: .a)

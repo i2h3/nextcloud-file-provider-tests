@@ -47,22 +47,27 @@ struct RemoteContentUpdateTests {
             let url = room.localURL(of: subject.localPath(of: name))
 
             let replacement = ContentFactory.content(size: ScenarioWorld.smallFileSize * 2, seed: 92)
-            let expected = ContentFactory.fingerprint(of: replacement)
+            _ = replacement
+
+            // A package's bytes live in a file inside it. The model puts files and bundles in the same class — a content update is legal on both — and this is where that costs a line.
+            let inside = ScenarioWorld.contentComponent(of: cell.item.kind)
+            let contentURL = inside.map { url.appending(path: $0, directoryHint: .notDirectory) } ?? url
+            let contentRemotePath = inside.map { "\(subject.remotePath)/\($0)" } ?? subject.remotePath
 
             let started = ContinuousClock.now
 
-            try await ServerWorkspace.withFixture(named: name, size: replacement.count, seed: 92) { source, _ in
-                try await room.server.upload(source, to: subject.parentRemotePath, force: true)
+            try await ServerWorkspace.withFixture(named: inside ?? name, size: replacement.count, seed: 92) { source, _ in
+                try await room.server.upload(source, to: inside == nil ? subject.parentRemotePath : subject.remotePath, force: true)
             }
 
             // Awaited by size rather than by content, because reading the file is what would materialize it — and for half these cells the thing being tested is that it was not materialized. The new content is a different length from the old on purpose, so that a lookup can see the change.
             try await Waiter.waitUntilBlocking("the client learns the file has changed", timeout: LiveEnvironment.scaled(.seconds(180))) {
-                try LocalNode.at(url)?.size == Int64(replacement.count)
+                try LocalNode.at(contentURL)?.size == Int64(replacement.count)
             }
 
             MetricsRecorder.record("server to client content update", duration: ContinuousClock.now - started, in: room, test: cell.description)
 
-            let node = try #require(try LocalNode.at(url), "The file is gone from the client after being changed on the server.")
+            let node = try #require(try LocalNode.at(contentURL), "The file is gone from the client after being changed on the server.")
 
             switch level {
                 case .dataless:
@@ -72,10 +77,12 @@ struct RemoteContentUpdateTests {
                     """)
 
                 case .materialized:
-                    let arrived = try Data(contentsOf: url)
+                    // Compared against what the server holds rather than against the bytes the fixture was built from, so the assertion stays true to its name if the fixture ever changes.
+                    let arrived = try Data(contentsOf: contentURL)
+                    let stored = try await room.remoteFingerprint(of: contentRemotePath)
 
-                    #expect(ContentFactory.fingerprint(of: arrived) == expected, """
-                    The file the client had already downloaded still reads as the old version after the server was given a new one, so the two sides disagree about the contents of a file the user has open.
+                    #expect(ContentFactory.fingerprint(of: arrived) == stored, """
+                    The file the client had already downloaded still reads as something other than what the server now holds, so the two sides disagree about the contents of a file the user has open.
                     """)
 
                 case .evicted, .materializedDeep, .unknown:

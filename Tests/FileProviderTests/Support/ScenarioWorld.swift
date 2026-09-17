@@ -37,6 +37,70 @@ enum ScenarioWorld {
     static let childFixtureName = "child.bin"
 
     ///
+    /// The extension which makes a directory a package.
+    ///
+    /// A bundle is not a kind of file the system stores — it is a directory the Finder and the framework agree to present as one item, and what makes them agree is the extension. `.rtfd` is chosen because it is a document type macOS has recognised as a package since long before File Provider existed, so a client which mishandles it is mishandling something ordinary rather than something exotic.
+    ///
+    static let bundleExtension = "rtfd"
+
+    ///
+    /// The file a bundle is given so that it has something inside it.
+    ///
+    static let bundleContentName = "TXT.rtf"
+
+    ///
+    /// Where an item's bytes live, relative to the item itself.
+    ///
+    /// A file is its own content; a bundle's content is a file inside it. The model puts them in the same class — ``ScenarioMatrix/ItemKind/hasOwnContent`` is true for both, so a content update is legal on a package — and this is the one place that difference has to be spelled out.
+    ///
+    /// - Parameters:
+    ///     - kind: What the cell asks for.
+    ///
+    /// - Returns: The path component to append, or `nil` when the item is its own content.
+    ///
+    static func contentComponent(of kind: ItemKind) -> String? {
+        kind == .bundle ? bundleContentName : nil
+    }
+
+    ///
+    /// Name an item so that the system will treat it as the kind the cell asks for.
+    ///
+    /// The kind is not a property the harness can declare — it follows from the name for a bundle and from being a directory for the rest. Until this existed every suite spelled the rule out itself, in the one shape that had no bundle in it.
+    ///
+    /// - Parameters:
+    ///     - base: The stem, which says what the test is doing.
+    ///     - kind: What the cell asks for.
+    ///
+    /// - Returns: The name to use.
+    ///
+    static func name(_ base: String, for kind: ItemKind) -> String {
+        switch kind {
+            case .file: "\(base).bin"
+            case .bundle: "\(base).\(bundleExtension)"
+            case .folderEmpty, .folderWithChildren: base
+        }
+    }
+
+    ///
+    /// How many bytes a cell's file holds.
+    ///
+    /// The model treats the size of a file as an axis, and until this existed the harness treated it as a constant: everything was ``smallFileSize`` and the cells asking for anything else were excluded. An empty file is not a degenerate small one — "nothing to upload" is a case a client can quietly skip rather than perform, which is why the model gives it a cell of its own.
+    ///
+    /// - Parameters:
+    ///     - size: What the cell asks for.
+    ///
+    /// - Returns: The number of bytes, or `nil` for a size this harness cannot produce.
+    ///
+    static func bytes(for size: FileSize?) -> Int? {
+        switch size {
+            case .empty: 0
+            case .small, nil: smallFileSize
+            case .large: nil
+            case .some: nil
+        }
+    }
+
+    ///
     /// Build the world a scenario describes, and confirm it was built.
     ///
     /// - Parameters:
@@ -329,11 +393,11 @@ enum ScenarioWorld {
 
         switch scenario.item.kind {
             case .file:
-                guard scenario.item.size == .small else {
-                    throw ScenarioWorldError.unsupported("a file of size \(scenario.item.size?.rawValue ?? "unspecified"), which is its own cell")
+                guard let size = bytes(for: scenario.item.size) else {
+                    throw ScenarioWorldError.unsupported("a file of size \(scenario.item.size?.rawValue ?? "unspecified"), which takes a different path through the client and has never been exercised here")
                 }
 
-                try await ServerWorkspace.withFixture(named: name, size: smallFileSize, seed: 71) { source, _ in
+                try await ServerWorkspace.withFixture(named: name, size: size, seed: 71) { source, _ in
                     try await room.server.upload(source, to: parent, force: true)
                 }
 
@@ -348,7 +412,12 @@ enum ScenarioWorld {
                 }
 
             case .bundle:
-                throw ScenarioWorldError.unsupported("a package, which needs a fixture builder this harness does not have")
+                // A package is a directory with a recognised extension and something inside it. Built the same way on the server as any other directory, because that is all the server sees: whether it is one item or a tree is a question the Finder and the framework answer, and the whole point of these cells is that the two sides disagree about it.
+                try await room.server.createDirectory(path)
+
+                try await ServerWorkspace.withFixture(named: bundleContentName, size: smallFileSize, seed: 73) { source, _ in
+                    try await room.server.upload(source, to: path, force: true)
+                }
         }
     }
 
@@ -447,6 +516,13 @@ enum ScenarioWorld {
             return nil
         }
 
+        // An empty file is the one case where realization cannot be read from the file system. There is nothing to fetch, so the dataless flag is never cleared and the allocated blocks never rise above zero: a placeholder and a materialized copy of an empty file are the same three numbers. The cell is still worth running — every other clause holds — so the state is declined rather than the cell excluded.
+        guard scenario.item.size != .empty else {
+            ScenarioOracle.decline("realizationState", because: ScenarioOracle.emptyFileReason)
+
+            return try await room.remoteFingerprint(of: remotePath)
+        }
+
         guard level == .materialized else {
             // Awaited together rather than read once: these do not settle at the same instant, and reading one of them early is how a placeholder reports a size it does not yet have.
             try await Waiter.waitUntilBlocking("\(scenario.item.kind.rawValue) \"\(url.lastPathComponent)\" settles as a placeholder", timeout: LiveEnvironment.scaled(.seconds(60))) {
@@ -454,7 +530,7 @@ enum ScenarioWorld {
                     return false
                 }
 
-                return node.isDataless && node.size == Int64(smallFileSize) && node.allocatedBlocks == 0
+                return node.isDataless && node.size == Int64(bytes(for: scenario.item.size) ?? smallFileSize) && node.allocatedBlocks == 0
             }
 
             return nil

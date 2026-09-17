@@ -52,18 +52,23 @@ struct ConcurrentContentUpdateTests {
             let clientFingerprint = ContentFactory.fingerprint(of: byClient)
             let serverFingerprint = ContentFactory.fingerprint(of: byServer)
 
+            // A package's bytes live in a file inside it. The model puts files and bundles in the same class — a content update is legal on both — and this is where that costs a line.
+            let inside = ScenarioWorld.contentComponent(of: cell.item.kind)
+            let contentURL = inside.map { url.appending(path: $0, directoryHint: .notDirectory) } ?? url
+            let contentRemotePath = inside.map { "\(subject.remotePath)/\($0)" } ?? subject.remotePath
+
             let started = ContinuousClock.now
 
-            async let serverWrite: Void = ServerWorkspace.withFixture(named: name, size: byServer.count, seed: 94) { source, _ in
-                try await room.server.upload(source, to: subject.parentRemotePath, force: true)
+            async let serverWrite: Void = ServerWorkspace.withFixture(named: inside ?? name, size: byServer.count, seed: 94) { source, _ in
+                try await room.server.upload(source, to: inside == nil ? subject.parentRemotePath : subject.remotePath, force: true)
             }
 
-            try byClient.write(to: url)
+            try byClient.write(to: contentURL)
             try await serverWrite
 
             // Whether there was ever anything to resolve. Two different versions existing at the same moment is what makes this a conflict rather than two edits in a row, and without pausing the item that is a matter of timing rather than of arrangement. Read immediately, before either side has had time to carry its version to the other.
-            let serverHeld = try await room.remoteFingerprint(of: subject.remotePath)
-            let clientHeld = ContentFactory.fingerprint(of: try Data(contentsOf: url))
+            let serverHeld = try await room.remoteFingerprint(of: contentRemotePath)
+            let clientHeld = ContentFactory.fingerprint(of: try Data(contentsOf: contentURL))
 
             guard serverHeld == serverFingerprint, clientHeld == clientFingerprint else {
                 // Reported rather than passed. A cell which treats "no conflict occurred" as a success is a cell which cannot fail, and it would count towards coverage while testing nothing.

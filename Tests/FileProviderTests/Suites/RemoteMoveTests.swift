@@ -42,7 +42,7 @@ struct RemoteMoveTests {
         }
 
         try await CleanRoom.with(underTest, testName: "RemoteMove.\(cell.item.kind.rawValue).\(source.rawValue)-\(destination.rawValue)") { room in
-            let name = cell.item.kind == .file ? "travelling.bin" : "travelling"
+            let name = ScenarioWorld.name("travelling", for: cell.item.kind)
             let subject = try await ScenarioWorld.build(cell, in: room, named: name)
 
             guard let destinationLocal = subject.destinationLocal else {

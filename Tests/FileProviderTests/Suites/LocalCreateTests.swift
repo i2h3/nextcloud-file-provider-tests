@@ -38,10 +38,15 @@ struct LocalCreateTests {
         }
 
         try await CleanRoom.with(underTest, testName: "LocalCreate.\(cell.item.kind.rawValue).\(level.rawValue)") { room in
-            let name = cell.item.kind == .file ? "fresh.bin" : "fresh"
+            let name = ScenarioWorld.name("fresh", for: cell.item.kind)
             let site = try await ScenarioWorld.prepareCreation(cell, in: room)
             let url = room.localURL(of: site.localPath(of: name))
-            let content = ContentFactory.content(size: ScenarioWorld.smallFileSize, seed: 81)
+            // The cell's size rather than one size for every cell. A cell asking for an empty file and given sixty-four kilobytes would claim to test "nothing to upload" while testing the opposite.
+            guard let size = ScenarioWorld.bytes(for: cell.item.size) else {
+                throw ScenarioWorldError.unsupported("a file of size \(cell.item.size?.rawValue ?? "unspecified"), which the shared filter excludes")
+            }
+
+            let content = ContentFactory.content(size: size, seed: 81)
             let childContent = ContentFactory.content(size: ScenarioWorld.smallFileSize, seed: 82)
 
             let started = ContinuousClock.now
@@ -58,7 +63,9 @@ struct LocalCreateTests {
                     try childContent.write(to: url.appending(path: ScenarioWorld.childFixtureName, directoryHint: .notDirectory))
 
                 case .bundle:
-                    throw ScenarioWorldError.unsupported("a package, which the shared filter excludes from every quadrant")
+                    // Made exactly as a folder with a file in it is made, because that is what it is. The Finder shows one item and the server stores a tree, and the disagreement between those two views is what these cells exist to test.
+                    try FileManager.default.createDirectory(at: url, withIntermediateDirectories: false)
+                    try content.write(to: url.appending(path: ScenarioWorld.bundleContentName, directoryHint: .notDirectory))
             }
 
             // Asserted immediately, while the only thing that has touched the domain is the write above. A create resolves its parent to place the new item there, and whether that resolution enumerates the container is the assumption every dataless cell in this suite rests on. If it does, this cell established a materialized container and claimed a dataless one — which does not fail anywhere, it passes and counts as coverage.

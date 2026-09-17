@@ -179,7 +179,7 @@ struct DeletionPropagationRateTests {
             var lateLatencies = [Duration]()
 
             for trial in 1 ... trials {
-                let name = cell.item.kind == .file ? "trial-\(trial).bin" : "trial-\(trial)"
+                let name = ScenarioWorld.name("trial-\(trial)", for: cell.item.kind)
                 let subject: ScenarioSubject
 
                 do {

@@ -46,8 +46,8 @@ struct RemoteMetadataUpdateTests {
         }
 
         try await CleanRoom.with(underTest, testName: "RemoteMetadataUpdate.\(cell.item.kind.rawValue).\(level.rawValue)") { room in
-            let before = cell.item.kind == .file ? "before.bin" : "before"
-            let after = cell.item.kind == .file ? "after.bin" : "after"
+            let before = ScenarioWorld.name("before", for: cell.item.kind)
+            let after = ScenarioWorld.name("after", for: cell.item.kind)
 
             // Everything up to here is world building. A failure in it means this cell was never measured, which is a different thing from the client being wrong, and it is reported as one.
             let subject = try await ScenarioWorld.build(cell, in: room, named: before)

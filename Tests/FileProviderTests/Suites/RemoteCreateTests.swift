@@ -38,7 +38,7 @@ struct RemoteCreateTests {
         }
 
         try await CleanRoom.with(underTest, testName: "RemoteCreate.\(cell.item.kind.rawValue).\(level.rawValue)") { room in
-            let name = cell.item.kind == .file ? "arriving.bin" : "arriving"
+            let name = ScenarioWorld.name("arriving", for: cell.item.kind)
             let site = try await ScenarioWorld.prepareCreation(cell, in: room)
             let url = room.localURL(of: site.localPath(of: name))
 

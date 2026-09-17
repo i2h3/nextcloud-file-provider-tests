@@ -52,7 +52,7 @@ struct RemoteDeleteTests {
         }
 
         try await CleanRoom.with(underTest, testName: "RemoteDelete.\(cell.item.kind.rawValue).\(level.rawValue)") { room in
-            let name = cell.item.kind == .file ? "doomed.bin" : "doomed"
+            let name = ScenarioWorld.name("doomed", for: cell.item.kind)
             let subject = try await ScenarioWorld.build(cell, in: room, named: name)
 
             let started = ContinuousClock.now
@@ -105,8 +105,8 @@ struct RemoteDeleteTests {
             #expect(entry.isDirectory == (cell.item.kind != .file), "The trashed item changed from a file to a directory or the reverse on its way into the trash.")
 
             // The byte-level comparison is declined rather than attempted: reading content back out of the trash needs a download against the trash endpoint, which the WebDAV client here does not expose. The size is what it will give, and it is worth having.
-            if cell.item.kind == .file, let size = entry.size {
-                #expect(size == UInt64(ScenarioWorld.smallFileSize), "The trashed copy of the file is \(size) bytes where the file was \(ScenarioWorld.smallFileSize).")
+            if cell.item.kind == .file, let size = entry.size, let expected = ScenarioWorld.bytes(for: cell.item.size) {
+                #expect(size == UInt64(expected), "The trashed copy of the file is \(size) bytes where the file was \(expected).")
             }
 
             ScenarioOracle.decline("noDuplicatesOrOrphans", because: ScenarioOracle.posixListingReason)

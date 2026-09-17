@@ -20,18 +20,8 @@ enum ScenarioSelection {
     /// - Returns: `true` if it can be run today.
     ///
     static func isBuildable(_ scenario: Scenario) -> Bool {
-        // A package needs a fixture builder, and nothing in this repository creates one.
-        guard scenario.item.kind != .bundle else {
-            return false
-        }
-
         // Above the chunking threshold the upload takes a different path through the client, and nothing here has ever exercised it.
         guard scenario.item.size != .large else {
-            return false
-        }
-
-        // An empty file is perfectly constructible, and is excluded for a narrower reason than the rest of this list: it keeps its dataless flag after being read, because there was never anything to fetch to clear it, so the realization clause cannot fail for it. The cell is buildable and the oracle is not, which is a different problem from the others here and wants a per-cell decline rather than an exclusion. Recorded as a blocker so the count stays honest until that exists.
-        guard scenario.item.size != .empty else {
             return false
         }
 

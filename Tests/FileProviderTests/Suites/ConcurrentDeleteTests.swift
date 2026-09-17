@@ -40,7 +40,7 @@ struct ConcurrentDeleteTests {
         }
 
         try await CleanRoom.with(underTest, testName: "ConcurrentDelete.\(cell.item.kind.rawValue).\(level.rawValue)") { room in
-            let name = cell.item.kind == .file ? "contested.bin" : "contested"
+            let name = ScenarioWorld.name("contested", for: cell.item.kind)
             let subject = try await ScenarioWorld.build(cell, in: room, named: name)
             let url = room.localURL(of: subject.localPath(of: name))
 
