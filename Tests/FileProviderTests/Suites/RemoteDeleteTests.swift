@@ -33,10 +33,7 @@ struct RemoteDeleteTests {
     ///
     /// Twelve of the quadrant's fifty-two. The largest single exclusion is `trash:without`, which needs the server's trash application disabled and read back through its capabilities — a server profile rather than a test, and the one primitive that would most enlarge this suite.
     ///
-    static let cells: [Scenario] = Generator
-        .scenarios(for: Quadrant(origin: .remote, operation: .delete), phase: .a)
-        .filter(ScenarioSelection.isBuildable)
-        .sorted { $0.description < $1.description }
+    static let cells: [Scenario] = ScenarioSelection.cells(of: Quadrant(origin: .remote, operation: .delete))
 
     ///
     /// The contract: an item deleted on the server disappears from the client and is recoverable from the trash.

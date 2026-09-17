@@ -19,10 +19,7 @@ struct LocalContentUpdateTests {
     ///
     /// The cells of this quadrant which this harness can currently establish and judge.
     ///
-    static let cells: [Scenario] = Generator
-        .scenarios(for: Quadrant(origin: .local, operation: .contentUpdate), phase: .a)
-        .filter(ScenarioSelection.isBuildable)
-        .sorted { $0.description < $1.description }
+    static let cells: [Scenario] = ScenarioSelection.cells(of: Quadrant(origin: .local, operation: .contentUpdate))
 
     ///
     /// The contract: bytes written in the client become the bytes on the server, without the item becoming a different item.

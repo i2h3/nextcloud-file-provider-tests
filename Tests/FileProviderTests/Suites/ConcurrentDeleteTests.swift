@@ -21,10 +21,7 @@ struct ConcurrentDeleteTests {
     ///
     /// The cells of this quadrant which this harness can currently establish and judge.
     ///
-    static let cells: [Scenario] = Generator
-        .scenarios(for: Quadrant(origin: .concurrent, operation: .delete), phase: .a)
-        .filter(ScenarioSelection.isBuildable)
-        .sorted { $0.description < $1.description }
+    static let cells: [Scenario] = ScenarioSelection.cells(of: Quadrant(origin: .concurrent, operation: .delete))
 
     ///
     /// The contract: when both sides delete the same item, it ends up gone from both and recoverable from the trash.

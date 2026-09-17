@@ -21,10 +21,7 @@ struct ConcurrentMetadataUpdateTests {
     ///
     /// The cells of this quadrant which this harness can currently establish and judge.
     ///
-    static let cells: [Scenario] = Generator
-        .scenarios(for: Quadrant(origin: .concurrent, operation: .metadataUpdate), phase: .a)
-        .filter(ScenarioSelection.isBuildable)
-        .sorted { $0.description < $1.description }
+    static let cells: [Scenario] = ScenarioSelection.cells(of: Quadrant(origin: .concurrent, operation: .metadataUpdate))
 
     ///
     /// The contract: an item renamed on both sides at once survives under one of the permitted names.

@@ -23,10 +23,7 @@ struct RemoteMoveTests {
     ///
     /// The cells of this quadrant which this harness can currently establish and judge.
     ///
-    static let cells: [Scenario] = Generator
-        .scenarios(for: Quadrant(origin: .remote, operation: .move), phase: .a)
-        .filter(ScenarioSelection.isBuildable)
-        .sorted { $0.description < $1.description }
+    static let cells: [Scenario] = ScenarioSelection.cells(of: Quadrant(origin: .remote, operation: .move))
 
     ///
     /// The contract: an item moved on the server moves in the client, and stays the same item.

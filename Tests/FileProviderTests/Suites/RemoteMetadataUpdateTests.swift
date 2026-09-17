@@ -27,10 +27,7 @@ struct RemoteMetadataUpdateTests {
     ///
     /// Generated, then filtered down to what the world builder can actually construct — there is no list of test cases here to fall out of step with the model. A cell excluded by this filter is excluded for a named, countable reason: a package needs a fixture builder, an evicted item needs an observation that separates it from a placeholder, a deep-materialized directory needs a recursive walk. Each of those is a primitive, and building one turns its rows on without anything here changing.
     ///
-    static let cells: [Scenario] = Generator
-        .scenarios(for: Quadrant(origin: .remote, operation: .metadataUpdate), phase: .a)
-        .filter(ScenarioSelection.isBuildable)
-        .sorted { $0.description < $1.description }
+    static let cells: [Scenario] = ScenarioSelection.cells(of: Quadrant(origin: .remote, operation: .metadataUpdate))
 
     ///
     /// The contract: a name changed on the server becomes that name on the client, and nothing else about the item changes.

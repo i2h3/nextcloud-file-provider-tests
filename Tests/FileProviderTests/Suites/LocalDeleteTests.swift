@@ -19,10 +19,7 @@ struct LocalDeleteTests {
     ///
     /// The cells of this quadrant which this harness can currently establish and judge.
     ///
-    static let cells: [Scenario] = Generator
-        .scenarios(for: Quadrant(origin: .local, operation: .delete), phase: .a)
-        .filter(ScenarioSelection.isBuildable)
-        .sorted { $0.description < $1.description }
+    static let cells: [Scenario] = ScenarioSelection.cells(of: Quadrant(origin: .local, operation: .delete))
 
     ///
     /// The contract: an item deleted in the client disappears from the server and is recoverable from its trash.

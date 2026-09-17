@@ -21,22 +21,22 @@ struct ScenarioSelectionTests {
     @Test
     func `The remote metadata update suite runs the cells it is meant to.`() {
         let expected = [
-            "remote metadataUpdate item:dataless kind:bundle at:standard:root",
-            "remote metadataUpdate item:dataless kind:bundle at:standard:subdirectory",
             "remote metadataUpdate item:dataless kind:file size:small at:standard:root",
             "remote metadataUpdate item:dataless kind:file size:small at:standard:subdirectory",
             "remote metadataUpdate item:dataless kind:folderEmpty at:standard:root",
             "remote metadataUpdate item:dataless kind:folderEmpty at:standard:subdirectory",
             "remote metadataUpdate item:dataless kind:folderWithChildren at:standard:root",
             "remote metadataUpdate item:dataless kind:folderWithChildren at:standard:subdirectory",
-            "remote metadataUpdate item:materialized kind:bundle at:standard:root",
-            "remote metadataUpdate item:materialized kind:bundle at:standard:subdirectory",
             "remote metadataUpdate item:materialized kind:file size:small at:standard:root",
             "remote metadataUpdate item:materialized kind:file size:small at:standard:subdirectory",
             "remote metadataUpdate item:materialized kind:folderEmpty at:standard:root",
             "remote metadataUpdate item:materialized kind:folderEmpty at:standard:subdirectory",
             "remote metadataUpdate item:materialized kind:folderWithChildren at:standard:root",
             "remote metadataUpdate item:materialized kind:folderWithChildren at:standard:subdirectory",
+            "remote metadataUpdate item:dataless kind:bundle at:standard:root",
+            "remote metadataUpdate item:dataless kind:bundle at:standard:subdirectory",
+            "remote metadataUpdate item:materialized kind:bundle at:standard:root",
+            "remote metadataUpdate item:materialized kind:bundle at:standard:subdirectory",
         ]
 
         #expect(RemoteMetadataUpdateTests.cells.map(\.description) == expected, """
@@ -67,10 +67,6 @@ struct ScenarioSelectionTests {
     @Test
     func `The remote delete suite runs the cells it is meant to.`() {
         let expected = [
-            "remote delete item:dataless kind:bundle at:standard:root trash:with",
-            "remote delete item:dataless kind:bundle at:standard:root trash:without",
-            "remote delete item:dataless kind:bundle at:standard:subdirectory trash:with",
-            "remote delete item:dataless kind:bundle at:standard:subdirectory trash:without",
             "remote delete item:dataless kind:file size:small at:standard:root trash:with",
             "remote delete item:dataless kind:file size:small at:standard:root trash:without",
             "remote delete item:dataless kind:file size:small at:standard:subdirectory trash:with",
@@ -83,10 +79,6 @@ struct ScenarioSelectionTests {
             "remote delete item:dataless kind:folderWithChildren at:standard:root trash:without",
             "remote delete item:dataless kind:folderWithChildren at:standard:subdirectory trash:with",
             "remote delete item:dataless kind:folderWithChildren at:standard:subdirectory trash:without",
-            "remote delete item:materialized kind:bundle at:standard:root trash:with",
-            "remote delete item:materialized kind:bundle at:standard:root trash:without",
-            "remote delete item:materialized kind:bundle at:standard:subdirectory trash:with",
-            "remote delete item:materialized kind:bundle at:standard:subdirectory trash:without",
             "remote delete item:materialized kind:file size:small at:standard:root trash:with",
             "remote delete item:materialized kind:file size:small at:standard:root trash:without",
             "remote delete item:materialized kind:file size:small at:standard:subdirectory trash:with",
@@ -99,6 +91,14 @@ struct ScenarioSelectionTests {
             "remote delete item:materialized kind:folderWithChildren at:standard:root trash:without",
             "remote delete item:materialized kind:folderWithChildren at:standard:subdirectory trash:with",
             "remote delete item:materialized kind:folderWithChildren at:standard:subdirectory trash:without",
+            "remote delete item:dataless kind:bundle at:standard:root trash:with",
+            "remote delete item:dataless kind:bundle at:standard:root trash:without",
+            "remote delete item:dataless kind:bundle at:standard:subdirectory trash:with",
+            "remote delete item:dataless kind:bundle at:standard:subdirectory trash:without",
+            "remote delete item:materialized kind:bundle at:standard:root trash:with",
+            "remote delete item:materialized kind:bundle at:standard:root trash:without",
+            "remote delete item:materialized kind:bundle at:standard:subdirectory trash:with",
+            "remote delete item:materialized kind:bundle at:standard:subdirectory trash:without",
         ]
 
         #expect(RemoteDeleteTests.cells.map(\.description) == expected, """
@@ -148,7 +148,7 @@ struct ScenarioSelectionTests {
         #expect(all.count == quadrant.total, "\(quadrant.name) offers \(all.count) cells where it offered \(quadrant.total).")
         #expect(quadrant.cells.count == quadrant.running, "\(quadrant.name) runs \(quadrant.cells.count) cells where it ran \(quadrant.running).")
 
-        #expect(quadrant.cells == all.filter(ScenarioSelection.isBuildable).sorted { $0.description < $1.description }, """
+        #expect(quadrant.cells == ScenarioSelection.cells(of: quadrant.quadrant), """
         \(quadrant.name) runs a different set of cells from what the shared filter selects, which means the suite has its own filter and the two can drift apart.
         """)
     }

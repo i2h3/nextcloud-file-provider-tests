@@ -23,10 +23,7 @@ struct RemoteContentUpdateTests {
     ///
     /// The cells of this quadrant which this harness can currently establish and judge.
     ///
-    static let cells: [Scenario] = Generator
-        .scenarios(for: Quadrant(origin: .remote, operation: .contentUpdate), phase: .a)
-        .filter(ScenarioSelection.isBuildable)
-        .sorted { $0.description < $1.description }
+    static let cells: [Scenario] = ScenarioSelection.cells(of: Quadrant(origin: .remote, operation: .contentUpdate))
 
     ///
     /// The contract: a new version on the server reaches the client, and reaches a placeholder without materializing it.

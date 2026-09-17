@@ -12,6 +12,34 @@ import ScenarioMatrix
 ///
 enum ScenarioSelection {
     ///
+    /// The cells a suite runs, in the order it should run them.
+    ///
+    /// Sorted by description, as they always were, except that a cell whose failure is a known limitation of the client goes last. That is not tidiness. A cell which is expected to fail spends its whole timeout failing and leaves the client in whatever state that produces, and the next cell inherits it — which was not hypothetical: `kind:bundle` sorts before `kind:file`, so a package cell ran immediately before an empty-file cell in every single run, and when the second one failed there was no way to tell whether the client had lost the creation or the package cell had poisoned the room.
+    ///
+    /// A confound which is structural cannot be measured away by repeating the run. Moving the expected failures to the end removes it for every quadrant at once, and costs nothing: the cells still all run.
+    ///
+    /// - Parameters:
+    ///     - quadrant: The quadrant to take the cells of.
+    ///
+    /// - Returns: The buildable cells, ordered.
+    ///
+    static func cells(of quadrant: Quadrant) -> [Scenario] {
+        Generator
+            .scenarios(for: quadrant, phase: .a)
+            .filter(isBuildable)
+            .sorted { first, second in
+                let firstIsKnown = KnownLimitation.reason(for: first.description) != nil
+                let secondIsKnown = KnownLimitation.reason(for: second.description) != nil
+
+                guard firstIsKnown == secondIsKnown else {
+                    return !firstIsKnown
+                }
+
+                return first.description < second.description
+            }
+    }
+
+    ///
     /// Whether this harness can build the world a cell describes and judge what happens in it.
     ///
     /// - Parameters:

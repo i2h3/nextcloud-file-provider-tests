@@ -23,10 +23,7 @@ struct ConcurrentContentUpdateTests {
     ///
     /// The cells of this quadrant which this harness can currently establish and judge.
     ///
-    static let cells: [Scenario] = Generator
-        .scenarios(for: Quadrant(origin: .concurrent, operation: .contentUpdate), phase: .a)
-        .filter(ScenarioSelection.isBuildable)
-        .sorted { $0.description < $1.description }
+    static let cells: [Scenario] = ScenarioSelection.cells(of: Quadrant(origin: .concurrent, operation: .contentUpdate))
 
     ///
     /// The contract: when both sides write different bytes at once, the two sides converge on bytes one of them wrote.

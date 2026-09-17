@@ -19,10 +19,7 @@ struct LocalCreateTests {
     ///
     /// The cells of this quadrant which this harness can currently establish and judge.
     ///
-    static let cells: [Scenario] = Generator
-        .scenarios(for: Quadrant(origin: .local, operation: .create), phase: .a)
-        .filter(ScenarioSelection.isBuildable)
-        .sorted { $0.description < $1.description }
+    static let cells: [Scenario] = ScenarioSelection.cells(of: Quadrant(origin: .local, operation: .create))
 
     ///
     /// The contract: an item created in the client reaches the server with the content it was given.
@@ -98,11 +95,14 @@ struct LocalCreateTests {
                 case .folderWithChildren:
                     // Awaited rather than read once. The folder and the file inside it are two uploads, and the wait above only proves the first of them happened — so reading the listing straight afterwards catches a folder which is empty because its child is still on its way. The first run of this suite did exactly that and recorded it as the client losing a file.
                     do {
+                        // A listing which raises is "not yet", not "no". A folder the client has just created does not immediately carry every property the WebDAV client insists on decoding — reading one a moment too early fails with "Failed to get size", which is a statement about the server having not finished rather than about the folder's contents. Letting that escape the wait turned a race into a verdict, in the one cell whose folder is nested deeply enough to lose it twice running.
                         try await Waiter.poll("the file inside \"\(name)\" reaches the server", timeout: LiveEnvironment.scaled(.seconds(180))) {
-                            try await room.remoteChildren(of: site.remotePath(of: name)).contains { $0.name == ScenarioWorld.childFixtureName }
+                            let listing = try? await room.remoteChildren(of: site.remotePath(of: name))
+
+                            return listing?.contains { $0.name == ScenarioWorld.childFixtureName } ?? false
                         }
                     } catch is WaitTimeoutError {
-                        let children = try await room.remoteChildren(of: site.remotePath(of: name))
+                        let children = (try? await room.remoteChildren(of: site.remotePath(of: name))) ?? []
 
                         Issue.record("""
                         The folder reached the server without the file inside it, so a person who creates a folder with something in it gets an empty folder. It holds: \(children.map(\.name).sorted().joined(separator: ", ")).
