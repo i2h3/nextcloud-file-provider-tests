@@ -58,23 +58,35 @@ struct ScenarioSelectionTests {
     ///
     /// Exactly which cells of the remote-delete quadrant this harness runs today.
     ///
-    /// Twelve of fifty-two. The gap is dominated by `trash:without`, which needs a second server profile with the trash application disabled, and by the same realization and item-kind blockers as everywhere else.
+    /// Twenty-four of fifty-two. The trash axis is no longer a blocker — the application is turned off and on per room — so what remains is the realization and item-kind blockers which apply everywhere.
     ///
     @Test
-    func `The remote delete suite runs the twelve cells it is meant to.`() {
+    func `The remote delete suite runs the cells it is meant to.`() {
         let expected = [
             "remote delete item:dataless kind:file size:small at:standard:root trash:with",
+            "remote delete item:dataless kind:file size:small at:standard:root trash:without",
             "remote delete item:dataless kind:file size:small at:standard:subdirectory trash:with",
+            "remote delete item:dataless kind:file size:small at:standard:subdirectory trash:without",
             "remote delete item:dataless kind:folderEmpty at:standard:root trash:with",
+            "remote delete item:dataless kind:folderEmpty at:standard:root trash:without",
             "remote delete item:dataless kind:folderEmpty at:standard:subdirectory trash:with",
+            "remote delete item:dataless kind:folderEmpty at:standard:subdirectory trash:without",
             "remote delete item:dataless kind:folderWithChildren at:standard:root trash:with",
+            "remote delete item:dataless kind:folderWithChildren at:standard:root trash:without",
             "remote delete item:dataless kind:folderWithChildren at:standard:subdirectory trash:with",
+            "remote delete item:dataless kind:folderWithChildren at:standard:subdirectory trash:without",
             "remote delete item:materialized kind:file size:small at:standard:root trash:with",
+            "remote delete item:materialized kind:file size:small at:standard:root trash:without",
             "remote delete item:materialized kind:file size:small at:standard:subdirectory trash:with",
+            "remote delete item:materialized kind:file size:small at:standard:subdirectory trash:without",
             "remote delete item:materialized kind:folderEmpty at:standard:root trash:with",
+            "remote delete item:materialized kind:folderEmpty at:standard:root trash:without",
             "remote delete item:materialized kind:folderEmpty at:standard:subdirectory trash:with",
+            "remote delete item:materialized kind:folderEmpty at:standard:subdirectory trash:without",
             "remote delete item:materialized kind:folderWithChildren at:standard:root trash:with",
+            "remote delete item:materialized kind:folderWithChildren at:standard:root trash:without",
             "remote delete item:materialized kind:folderWithChildren at:standard:subdirectory trash:with",
+            "remote delete item:materialized kind:folderWithChildren at:standard:subdirectory trash:without",
         ]
 
         #expect(RemoteDeleteTests.cells.map(\.description) == expected, """
@@ -93,7 +105,7 @@ struct ScenarioSelectionTests {
         let buildable = all.filter(ScenarioSelection.isBuildable)
 
         #expect(all.count == 406)
-        #expect(buildable.count == 122, """
+        #expect(buildable.count == 158, """
         The harness can build \(buildable.count) of the \(all.count) cells of phase A. A change to this number is either a primitive gained or coverage lost, and both are worth a deliberate edit here.
         """)
     }
@@ -106,7 +118,7 @@ struct ScenarioSelectionTests {
     /// Both counts are pinned per quadrant. The first four quadrants each offer exactly twelve cells, which read for a while like a rule and is a coincidence of what the blockers happen to prune: a create pins its **container** rather than its item, the container lattice is smaller than the item lattice, and the create quadrants therefore offer nine. A number changing here is either a primitive gained or coverage lost, and both are worth a deliberate edit.
     ///
     @Test(arguments: [
-        ("LocalDelete", LocalDeleteTests.cells, Quadrant(origin: .local, operation: .delete), 52, 12),
+        ("LocalDelete", LocalDeleteTests.cells, Quadrant(origin: .local, operation: .delete), 52, 24),
         ("LocalMetadataUpdate", LocalMetadataUpdateTests.cells, Quadrant(origin: .local, operation: .metadataUpdate), 26, 12),
         ("LocalMove", LocalMoveTests.cells, Quadrant(origin: .local, operation: .move), 24, 12),
         ("RemoteMove", RemoteMoveTests.cells, Quadrant(origin: .remote, operation: .move), 36, 12),
@@ -114,8 +126,9 @@ struct ScenarioSelectionTests {
         ("RemoteCreate", RemoteCreateTests.cells, Quadrant(origin: .remote, operation: .create), 36, 9),
         ("LocalContentUpdate", LocalContentUpdateTests.cells, Quadrant(origin: .local, operation: .contentUpdate), 8, 2),
         ("RemoteContentUpdate", RemoteContentUpdateTests.cells, Quadrant(origin: .remote, operation: .contentUpdate), 24, 4),
-        ("ConcurrentDelete", ConcurrentDeleteTests.cells, Quadrant(origin: .concurrent, operation: .delete), 52, 12),
+        ("ConcurrentDelete", ConcurrentDeleteTests.cells, Quadrant(origin: .concurrent, operation: .delete), 52, 24),
         ("ConcurrentMetadataUpdate", ConcurrentMetadataUpdateTests.cells, Quadrant(origin: .concurrent, operation: .metadataUpdate), 26, 12),
+        ("ConcurrentContentUpdate", ConcurrentContentUpdateTests.cells, Quadrant(origin: .concurrent, operation: .contentUpdate), 8, 2),
     ] as [(String, [Scenario], Quadrant, Int, Int)])
     func `Each generated quadrant runs the cells it is meant to.`(_ quadrant: (name: String, cells: [Scenario], quadrant: Quadrant, total: Int, running: Int)) {
         let all = Generator.scenarios(for: quadrant.quadrant, phase: .a)

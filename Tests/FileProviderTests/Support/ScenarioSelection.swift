@@ -35,11 +35,6 @@ enum ScenarioSelection {
             return false
         }
 
-        // A server with its trash application disabled is a second server profile, not a test.
-        guard scenario.trash ?? .with == .with else {
-            return false
-        }
-
         // Reading the local-name bounce needs an extended-attribute reader this harness does not have.
         guard scenario.encoding == nil else {
             return false

@@ -227,18 +227,46 @@ enum ScenarioWorld {
     /// - Throws: ``ScenarioWorldError`` if the server does not match, or whatever asking it raises.
     ///
     private static func confirmTrash(_ trash: TrashSupport, on room: CleanRoom) async throws {
-        let isEnabled = try await ScenarioWorldError.doing("asking the server whether it keeps deleted items") {
-            let capabilities = try await room.server.capabilities()
+        let wanted = trash == .with
 
-            // Absent rather than false is still an answer of no: a server which does not advertise the capability is one whose client is expected to treat trash as unavailable.
-            return try capabilities.get(Trashing.self)?.undelete ?? false
+        // Established rather than only checked. `files_trashbin` is an application an administrator may disable, and until this could be turned off, sixty cells of the matrix described a server nothing here could produce. Toggled per room because the suites are serialized and a room holds its server to itself.
+        if try await isTrashEnabled(on: room) != wanted {
+            try await ScenarioWorldError.doing("turning the server's trash bin \(wanted ? "on" : "off")") {
+                try await TrashApplication.setEnabled(wanted, inContainer: room.underTest.containerIdentifier)
+            }
         }
 
-        guard isEnabled == (trash == .with) else {
+        // Read back after the change, and read back from the same place the client reads it. Setting an application's state and assuming the capability followed is the shape of precondition this type exists to refuse: the cells which depend on it would pass while describing a server that was never produced.
+        let isEnabled = try await ScenarioWorldError.doing("asking the server whether it keeps deleted items") {
+            try await Waiter.poll("the server reports its trash bin as \(wanted ? "available" : "unavailable")", timeout: LiveEnvironment.scaled(.seconds(60))) {
+                try await isTrashEnabled(on: room) == wanted
+            }
+
+            return wanted
+        }
+
+        guard isEnabled == wanted else {
             throw ScenarioWorldError.unsupported("""
-            a server whose trash bin is \(trash == .with ? "enabled" : "disabled"), because this one reports `capabilities.files.undelete` as \(isEnabled). The cell describes a server this run is not talking to, so nothing it would have measured is about the client
+            a server whose trash bin is \(wanted ? "enabled" : "disabled"), because this one reports `capabilities.files.undelete` as \(isEnabled). The cell describes a server this run is not talking to, so nothing it would have measured is about the client
             """)
         }
+    }
+
+    ///
+    /// Ask the server whether it keeps deleted items, in the words the client reads.
+    ///
+    /// - Parameters:
+    ///     - room: The room whose server is asked.
+    ///
+    /// - Returns: Whether deleted items are recoverable.
+    ///
+    /// - Throws: Whatever asking raises.
+    ///
+    private static func isTrashEnabled(on room: CleanRoom) async throws -> Bool {
+        let capabilities = try await room.server.capabilities()
+
+        // Absent rather than false is still an answer of no: a server which does not advertise the capability is one whose client is expected to treat trash as unavailable.
+        return try capabilities.get(Trashing.self)?.undelete ?? false
     }
 
     ///
