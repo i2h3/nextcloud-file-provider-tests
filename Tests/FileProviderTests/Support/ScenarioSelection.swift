@@ -48,18 +48,15 @@ enum ScenarioSelection {
     /// - Returns: `true` if it can be run today.
     ///
     static func isBuildable(_ scenario: Scenario) -> Bool {
-        // Above the chunking threshold the upload takes a different path through the client, and nothing here has ever exercised it.
-        guard scenario.item.size != .large else {
-            return false
-        }
-
-        // Reading the local-name bounce needs an extended-attribute reader this harness does not have.
-        guard scenario.encoding == nil else {
-            return false
-        }
-
         // A pin can be neither set nor read from a test process, so a cell asking for one cannot be established.
         guard scenario.contentPolicy == .default else {
+            return false
+        }
+
+        // The item's name changes on arrival, which every path this harness computes is derived from. A cell whose item lands under a name the suite did not choose needs the bounced name threaded through ``ScenarioSubject`` and out to every assertion; until that exists the cell would fail because the harness looked in the wrong place, which is the most expensive kind of false report.
+        //
+        // The evidence itself is no longer the obstacle: ``ExtendedAttribute/beforeBounce`` reads the name the system bounced from, so a cell can say which name was rejected rather than only that two collided. What remains is plumbing.
+        guard scenario.encoding != .caseCollision else {
             return false
         }
 
@@ -80,19 +77,19 @@ enum ScenarioSelection {
     ///
     /// - Returns: `true` if the state can be established and confirmed.
     ///
-    private static func isBuildable(_ realization: Realization, kind _: ItemKind) -> Bool {
+    private static func isBuildable(_ realization: Realization, kind: ItemKind) -> Bool {
         realization.levels.allSatisfy { level in
             switch level {
                 case .dataless, .materialized:
                     true
 
                 case .evicted:
-                    // Measured: an evicted item and a never-fetched placeholder present an identical `(isDataless, size, allocatedBlocks)` triple, so a cell asserting the difference could not fail. Excluded until something separates them.
-                    false
+                    // Established by fetching and dropping the content. The two states remain indistinguishable to a test process — the same flag, size and zero blocks — so the cell runs and the distinction alone is declined, rather than the cell being dropped for a clause it cannot judge.
+                    kind == .file
 
                 case .materializedDeep:
-                    // Needs a recursive materialization walk, which this harness deliberately does not have — there is no recursive descent anywhere in it.
-                    false
+                    // One level down, child by child, which is the only way there is: asking the system to download a directory materializes its immediate children and stops. The model emits this level only where it differs from a shallow one.
+                    kind == .folderWithChildren
 
                 case .unknown:
                     // Every container a cell can place sits under the domain root, which is enumerated once while the room is built. A subdirectory container is therefore dataless at the start of a test and never unknown.

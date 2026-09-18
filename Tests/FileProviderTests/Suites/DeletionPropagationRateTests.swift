@@ -179,7 +179,7 @@ struct DeletionPropagationRateTests {
             var lateLatencies = [Duration]()
 
             for trial in 1 ... trials {
-                let name = ScenarioWorld.name("trial-\(trial)", for: cell.item.kind)
+                let name = ScenarioWorld.name("trial-\(trial)", for: cell.item.kind, encoding: cell.encoding)
                 let subject: ScenarioSubject
 
                 do {

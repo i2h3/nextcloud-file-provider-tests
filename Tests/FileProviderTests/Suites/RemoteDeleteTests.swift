@@ -49,7 +49,7 @@ struct RemoteDeleteTests {
         }
 
         try await CleanRoom.with(underTest, testName: "RemoteDelete.\(cell.item.kind.rawValue).\(level.rawValue)", cell: cell.description) { room in
-            let name = ScenarioWorld.name("doomed", for: cell.item.kind)
+            let name = ScenarioWorld.name("doomed", for: cell.item.kind, encoding: cell.encoding)
             let subject = try await ScenarioWorld.build(cell, in: room, named: name)
 
             let started = ContinuousClock.now

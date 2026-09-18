@@ -27,8 +27,15 @@ enum KnownLimitation {
             return nil
         }
 
+        // Not every operation on a package is refused, which the first run of these cells established by failing this expectation rather than the cell: deleting a package the client has never downloaded reaches the server like any other deletion, in all four of its cells. Only a package the client holds locally is in the ignore list, and only those deletions are dropped.
+        //
+        // Narrowed to what was measured rather than to what the log line sounded like. The wording — "Refusing to sync bundle or package" — reads as though it covers everything, and it does not.
+        guard !(cell.contains(" delete ") && cell.contains("item:dataless")) else {
+            return nil
+        }
+
         return """
-        The client does not synchronise packages, deliberately and in both directions. Its extension says so in its own log — "Refusing to sync bundle or package because this is not supported" — then adds the name to an ignore list and reports the exclusion to the main app over XPC. Measured on 2026-09-17: a package created in the client never reaches the server, and a rename of one never leaves the Mac.
+        The client does not synchronise packages it holds locally, deliberately and in both directions. Its extension says so in its own log — "Refusing to sync bundle or package because this is not supported" — then adds the name to an ignore list and reports the exclusion to the main app over XPC. Measured on 2026-09-17: a package created in the client never reaches the server, a rename of one never leaves the Mac, and deleting one the client has downloaded is dropped — while deleting one it has never downloaded works, which is why that case is not expected to fail.
 
         Disabled by https://github.com/nextcloud/desktop/pull/9971; restoring it is tracked by https://github.com/nextcloud/desktop/issues/9827. When it lands, these cells stop failing and this expectation becomes the thing that fails — which is how the suite tells somebody to delete this entry rather than leaving ninety-three cells quietly untested.
         """

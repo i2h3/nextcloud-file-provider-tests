@@ -35,7 +35,7 @@ struct LocalCreateTests {
         }
 
         try await CleanRoom.with(underTest, testName: "LocalCreate.\(cell.item.kind.rawValue).\(level.rawValue)", cell: cell.description) { room in
-            let name = ScenarioWorld.name("fresh", for: cell.item.kind)
+            let name = ScenarioWorld.name("fresh", for: cell.item.kind, encoding: cell.encoding)
             let site = try await ScenarioWorld.prepareCreation(cell, in: room)
             let url = room.localURL(of: site.localPath(of: name))
             // The cell's size rather than one size for every cell. A cell asking for an empty file and given sixty-four kilobytes would claim to test "nothing to upload" while testing the opposite.

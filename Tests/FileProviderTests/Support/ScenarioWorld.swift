@@ -30,6 +30,13 @@ enum ScenarioWorld {
     static let smallFileSize = 64 * 1024
 
     ///
+    /// How large a `size:large` file is.
+    ///
+    /// Comfortably above the client's chunking threshold, which is what the axis is for: a chunked upload takes a different path through the client and is assembled on the server afterwards, and assembly is its own way of ending up with content which does not match.
+    ///
+    static let largeFileSize = 12 * 1024 * 1024
+
+    ///
     /// The name of the one child a `folderWithChildren` is given.
     ///
     /// Shared because a create in the server-to-client direction has to assert that this child arrived, and a suite spelling the name a second time would keep passing after this one changed it.
@@ -73,12 +80,73 @@ enum ScenarioWorld {
     ///
     /// - Returns: The name to use.
     ///
-    static func name(_ base: String, for kind: ItemKind) -> String {
+    static func name(_ base: String, for kind: ItemKind, encoding: FilenameEncoding? = nil) -> String {
+        let stem = stem(base, encoding: encoding)
+
         switch kind {
-            case .file: "\(base).bin"
-            case .bundle: "\(base).\(bundleExtension)"
-            case .folderEmpty, .folderWithChildren: base
+            case .file: return "\(stem).bin"
+            case .bundle: return "\(stem).\(bundleExtension)"
+            case .folderEmpty, .folderWithChildren: return stem
         }
+    }
+
+    ///
+    /// The stem of a name, in the form the cell's encoding axis asks for.
+    ///
+    /// An ASCII name cannot carry this axis: precomposed and decomposed forms of `doomed` are the same bytes, so a cell claiming to test normalisation would test nothing. Every encoded cell therefore uses a stem with a character that has both forms, and the two are genuinely different on the wire — which is the whole point, because macOS stores one form and the server stores whatever it was sent.
+    ///
+    /// - Parameters:
+    ///     - base: What the test would have called it.
+    ///     - encoding: What the cell asks for.
+    ///
+    /// - Returns: The stem.
+    ///
+    static func stem(_ base: String, encoding: FilenameEncoding?) -> String {
+        switch encoding {
+            case .none: return base
+            case .nfc: return "\(base)-café".precomposedStringWithCanonicalMapping
+            case .nfd: return "\(base)-café".decomposedStringWithCanonicalMapping
+            case .caseCollision: return "\(base)-Sibling"
+        }
+    }
+
+    ///
+    /// The name of the sibling a `caseCollision` cell needs to collide with.
+    ///
+    /// The axis describes an item whose name differs from an existing one only by case, so the existing one has to exist first. On a case-insensitive volume the two cannot both be written, and the system renames the arriving item — the bounce whose evidence is ``ExtendedAttribute/beforeBounce``.
+    ///
+    /// - Parameters:
+    ///     - base: What the test would have called it.
+    ///     - kind: What sort of thing it is.
+    ///
+    /// - Returns: The sibling's name.
+    ///
+    static func sibling(_ base: String, for kind: ItemKind) -> String {
+        name("\(base)-sibling", for: kind)
+    }
+
+    ///
+    /// Whether a name the client shows is the one a cell asked for.
+    ///
+    /// Compared in one normalisation form, because the two sides store different ones and a byte comparison would report a difference which is not one. A bounced name matches too, and says so through the attribute recording what it was bounced from.
+    ///
+    /// - Parameters:
+    ///     - candidate: What the client shows.
+    ///     - requested: What was asked for.
+    ///     - url: Where the candidate is, for reading the bounce attribute.
+    ///
+    /// - Returns: Whether they are the same item.
+    ///
+    static func matches(_ candidate: String, requested: String, at url: URL? = nil) -> Bool {
+        guard candidate.precomposedStringWithCanonicalMapping != requested.precomposedStringWithCanonicalMapping else {
+            return true
+        }
+
+        guard let url, let bounced = ExtendedAttribute.string(of: ExtendedAttribute.beforeBounce, at: url) else {
+            return false
+        }
+
+        return bounced.precomposedStringWithCanonicalMapping == requested.precomposedStringWithCanonicalMapping
     }
 
     ///
@@ -95,7 +163,7 @@ enum ScenarioWorld {
         switch size {
             case .empty: 0
             case .small, nil: smallFileSize
-            case .large: nil
+            case .large: largeFileSize
             case .some: nil
         }
     }
@@ -209,7 +277,7 @@ enum ScenarioWorld {
 
         if case let .item(level) = scenario.realization {
             fingerprint = try await ScenarioWorldError.doing("confirming \"\(localPath)\" really is \(level.rawValue)") {
-                try await verify(level, scenario: scenario, at: url, remotePath: remotePath, in: room, wasEnumerated: wasEnumerated)
+                try await verify(level, scenario: scenario, at: url, path: localPath, remotePath: remotePath, in: room, wasEnumerated: wasEnumerated)
             }
         } else if scenario.item.kind == .file {
             fingerprint = try await ScenarioWorldError.doing("reading back the content of \"\(remotePath)\"") {
@@ -453,7 +521,37 @@ enum ScenarioWorld {
 
                 return true
 
-            case .unknown, .evicted, .materializedDeep:
+            case .evicted:
+                // Fetched, then dropped. The model keeps this apart from `dataless` because the item's history differs — it has been through the provider once and takes a re-fetch path rather than a first-fetch path, which it calls a bug magnet — even though the file system shows the same three numbers for both afterwards.
+                guard kind == .file else {
+                    throw ScenarioWorldError.unsupported("an evicted \(kind.rawValue), because eviction applies to content and a directory has none of its own")
+                }
+
+                _ = try Materialization.materialize(url)
+
+                guard Materialization.evict(url) else {
+                    throw ScenarioWorldError.unsupported("an evicted file, because the system would not accept the eviction it was asked for")
+                }
+
+                try await Waiter.waitUntilBlocking("\"\(url.lastPathComponent)\" settles as evicted", timeout: LiveEnvironment.scaled(.seconds(60))) {
+                    try LocalNode.at(url)?.allocatedBlocks == 0
+                }
+
+                return false
+
+            case .materializedDeep:
+                // One level down, child by child, because that is the only way there is: asking the system to download a directory materializes its immediate children and stops. The model emits this level only for a folder with children, where it is genuinely a different state from having entered the folder.
+                guard kind == .folderWithChildren else {
+                    throw ScenarioWorldError.unsupported("a deeply materialized \(kind.rawValue), which the model does not distinguish from a materialized one")
+                }
+
+                for child in try room.localChildren(of: path) {
+                    _ = try Materialization.materialize(room.localURL(of: "\(path)/\(child.name)"))
+                }
+
+                return true
+
+            case .unknown:
                 throw ScenarioWorldError.unsupported("the realization level \(level.rawValue), which this harness cannot yet establish and verify")
         }
     }
@@ -504,7 +602,7 @@ enum ScenarioWorld {
     ///
     /// - Throws: Whatever inspection raises. An unverifiable precondition fails here rather than in an oracle, so that the report says the measurement did not happen rather than that the client is wrong.
     ///
-    private static func verify(_ level: RealizationLevel, scenario: Scenario, at url: URL, remotePath: String, in room: CleanRoom, wasEnumerated: Bool) async throws -> String? {
+    private static func verify(_ level: RealizationLevel, scenario: Scenario, at url: URL, path: String, remotePath: String, in room: CleanRoom, wasEnumerated: Bool) async throws -> String? {
         let node = try #require(try LocalNode.at(url), "The item did not reach the client, so the cell's precondition was never established.")
 
         #expect(node.kind == (scenario.item.kind == .file ? .file : .directory), "The item reached the client as the wrong sort of thing.")
@@ -512,6 +610,15 @@ enum ScenarioWorld {
         guard scenario.item.kind == .file else {
             // For a directory the only honest statement is what this test did to it, and the ledger is the record of that.
             #expect(room.ledger.hasEnumerated(url) == wasEnumerated, "The record of whether this directory was entered does not match what the precondition asked for.")
+
+            guard level == .materializedDeep else {
+                return nil
+            }
+
+            // What separates this level from a merely entered directory: the children hold their bytes. Asserted on the children rather than on the folder, because a directory has no content of its own to occupy blocks.
+            for child in try room.localChildren(of: path) where child.kind == .file {
+                #expect(child.allocatedBlocks > 0, "\"\(child.name)\" holds no content, so the folder was entered rather than deeply materialized.")
+            }
 
             return nil
         }
@@ -521,6 +628,11 @@ enum ScenarioWorld {
             ScenarioOracle.decline("realizationState", because: ScenarioOracle.emptyFileReason)
 
             return try await room.remoteFingerprint(of: remotePath)
+        }
+
+        // An evicted file and one which was never fetched present the same size, the same flag and the same zero blocks — measured, and the reason this level was excluded until now. What differs is the item's history, which the file system does not record, so the state is confirmed as far as it can be and the distinction is declined rather than asserted.
+        if level == .evicted {
+            ScenarioOracle.decline("realizationState", because: ScenarioOracle.evictedItemReason)
         }
 
         guard level == .materialized else {

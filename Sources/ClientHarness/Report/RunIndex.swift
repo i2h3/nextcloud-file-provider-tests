@@ -111,7 +111,17 @@ public enum RunIndex {
                 continue
             }
 
-            guard let room = rooms.first(where: { $0.startedAt <= instant && ($0.endedAt ?? Date.distantFuture) >= instant }) else {
+            if let room = rooms.first(where: { $0.startedAt <= instant && ($0.endedAt ?? Date.distantFuture) >= instant }) {
+                attributed[room.user, default: []].append(failure)
+
+                continue
+            }
+
+            // An error which escapes the room's body is recorded after the room has been torn down and stamped with its end, so it falls a moment outside its own window. Attaching it to the nearest room which had just closed — and only when that room belongs to the same test — keeps those failures with their evidence instead of orphaning them, which is what happened to every known issue in the first run that had any.
+            guard let room = rooms
+                .filter({ ($0.endedAt ?? $0.startedAt) <= instant && $0.testIdentifier == failure.testIdentifier })
+                .max(by: { ($0.endedAt ?? $0.startedAt) < ($1.endedAt ?? $1.startedAt) })
+            else {
                 continue
             }
 
@@ -320,7 +330,8 @@ public enum RunIndex {
     /// - Returns: The markup.
     ///
     static func summary(rooms: [RoomManifest], failures: [ReportedFailure], quadrants: [String: [RoomManifest]], samples: [String: [LatencySample]]) -> String {
-        let failed = Set(failures.compactMap(\.caseDisplayName)).count
+        let unexpected = failures.filter { !$0.isKnown }
+        let failed = Set(unexpected.compactMap(\.caseDisplayName)).count
         let spent = rooms.compactMap { room in room.endedAt.map { $0.timeIntervalSince(room.startedAt) } }.reduce(0, +)
 
         let measured = samples.values.flatMap { $0 }.reduce(0.0) { total, sample in
@@ -336,7 +347,8 @@ public enum RunIndex {
         <h2>At a glance</h2>
         <ul class="tally">
         <li><b>\(rooms.count)</b><span>cells run</span></li>
-        <li><b class="\(failures.isEmpty ? "ok" : "bad")">\(failures.count)</b><span>failures</span></li>
+        <li><b class="\(unexpected.isEmpty ? "ok" : "bad")">\(unexpected.count)</b><span>failures</span></li>
+        <li><b class="meh">\(failures.count - unexpected.count)</b><span>known limitations</span></li>
         <li><b>\(failed)</b><span>cells affected</span></li>
         <li><b>\(quadrants.count)</b><span>quadrants</span></li>
         </ul>
@@ -344,6 +356,7 @@ public enum RunIndex {
         <table class="facts legend">
         <tr><th><span class="ok">passed</span></th><td>Everything this cell asserts held, and it recorded how long the change took to propagate. It does <em>not</em> mean every clause of the model was judged: a clause this harness cannot observe is declined rather than asserted, and the run prints the reason.</td></tr>
         <tr><th><span class="bad">failed</span></th><td>An assertion did not hold, or the cell raised before reaching one. The second is not a finding about the client — a cell whose world could not be built measured nothing. The message is on the row and the client and extension logs are behind the link.</td></tr>
+        <tr><th><span class="meh">known limitation</span></th><td>The cell failed and was expected to. Its subject declines the feature deliberately and the reason is on the row. It runs anyway, so that the day the client starts doing what the cell asks, the expectation fails instead and somebody is told — coverage nobody can forget to switch back on.</td></tr>
         <tr><th><span class="meh">no measurement</span></th><td>The cell ran and nothing went wrong, but no timing was recorded. Either its suite measures nothing, or the cell declined to measure: a concurrent write whose two sides did not overlap has no conflict to resolve and says so rather than passing quietly.</td></tr>
         </table>
         """
@@ -368,15 +381,24 @@ public enum RunIndex {
             let cell = room.cell ?? room.testName
             let taken = samples[cell]?.compactMap { $0.duration }.max()
 
-            let status = mine.isEmpty
-                ? (taken == nil ? "<span class=\"meh\">no measurement</span>" : "<span class=\"ok\">passed</span>")
-                : "<span class=\"bad\">failed</span>"
+            // A known issue is not a failure and must not be shown as one. It is a cell whose subject declines the feature, running deliberately so that the day it stops failing somebody is told — a red row would train a reader to ignore exactly the rows which will one day mean something.
+            let isExpected = !mine.isEmpty && mine.allSatisfy(\.isKnown)
+
+            let status: String
+
+            if mine.isEmpty {
+                status = taken == nil ? "<span class=\"meh\">no measurement</span>" : "<span class=\"ok\">passed</span>"
+            } else if isExpected {
+                status = "<span class=\"meh\">known limitation</span>"
+            } else {
+                status = "<span class=\"bad\">failed</span>"
+            }
 
             let detail = mine.map { "<p class=\"why\">\(escape($0.message))</p>" }.joined()
             let elapsed = room.endedAt.map { $0.timeIntervalSince(room.startedAt) }
 
             rows += """
-            <tr class="\(mine.isEmpty ? "" : "failed")">
+            <tr class="\(mine.isEmpty || isExpected ? "" : "failed")">
             <td><span class="what">\(escape(CellPhrase.sentence(for: cell)))</span><span class="exact">\(escape(cell))</span>\(detail)</td>
             <td>\(status)</td>
             <td class="num">\(taken.map { format($0) } ?? "—")</td>
@@ -386,7 +408,11 @@ public enum RunIndex {
             """
         }
 
-        let broken = rooms.filter { !(failures[$0.user] ?? []).isEmpty }.count
+        let broken = rooms.filter { room in
+            let mine = failures[room.user] ?? []
+
+            return !mine.isEmpty && !mine.allSatisfy(\.isKnown)
+        }.count
 
         // Wall-clock across the quadrant's rooms, which is what a reader is deciding about when they wonder whether to run it again. Building a room dominates it — a cell's own operation is usually under a second — so this is mostly the price of isolation, and saying so is the point.
         let spent = rooms.compactMap { room in room.endedAt.map { $0.timeIntervalSince(room.startedAt) } }.reduce(0, +)

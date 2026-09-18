@@ -37,7 +37,7 @@ struct ConcurrentDeleteTests {
         }
 
         try await CleanRoom.with(underTest, testName: "ConcurrentDelete.\(cell.item.kind.rawValue).\(level.rawValue)", cell: cell.description) { room in
-            let name = ScenarioWorld.name("contested", for: cell.item.kind)
+            let name = ScenarioWorld.name("contested", for: cell.item.kind, encoding: cell.encoding)
             let subject = try await ScenarioWorld.build(cell, in: room, named: name)
             let url = room.localURL(of: subject.localPath(of: name))
 

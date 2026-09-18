@@ -39,7 +39,7 @@ struct LocalMoveTests {
         }
 
         try await CleanRoom.with(underTest, testName: "LocalMove.\(cell.item.kind.rawValue).\(source.rawValue)-\(destination.rawValue)", cell: cell.description) { room in
-            let name = ScenarioWorld.name("travelling", for: cell.item.kind)
+            let name = ScenarioWorld.name("travelling", for: cell.item.kind, encoding: cell.encoding)
             let subject = try await ScenarioWorld.build(cell, in: room, named: name)
 
             let from = room.localURL(of: subject.localPath(of: name))

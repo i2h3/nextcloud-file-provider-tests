@@ -68,6 +68,13 @@ enum ScenarioOracle {
     """
 
     ///
+    /// Why an evicted item cannot be told from one which was never fetched.
+    ///
+    static let evictedItemReason = """
+    An evicted file and a placeholder which was never fetched present an identical triple to a test process: the dataless flag set, the size of the file they stand for, and no allocated blocks. The difference between them is the item's history — one has been through the provider and takes a re-fetch path — and nothing the file system exposes records that. The state is established and confirmed as far as it goes; which of the two it is cannot be asserted from here.
+    """
+
+    ///
     /// Why no winner can be named when both sides deleted the same item.
     ///
     static let mutualDeletionReason = """
