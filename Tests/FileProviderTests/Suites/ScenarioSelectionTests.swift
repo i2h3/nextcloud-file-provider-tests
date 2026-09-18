@@ -21,6 +21,10 @@ struct ScenarioSelectionTests {
     @Test
     func `The remote metadata update suite runs the cells it is meant to.`() {
         let expected = [
+            "remote metadataUpdate item:dataless kind:bundle at:standard:root",
+            "remote metadataUpdate item:dataless kind:bundle at:standard:root enc:nfc",
+            "remote metadataUpdate item:dataless kind:bundle at:standard:root enc:nfd",
+            "remote metadataUpdate item:dataless kind:bundle at:standard:subdirectory",
             "remote metadataUpdate item:dataless kind:file size:small at:standard:root",
             "remote metadataUpdate item:dataless kind:file size:small at:standard:root enc:nfc",
             "remote metadataUpdate item:dataless kind:file size:small at:standard:root enc:nfd",
@@ -35,6 +39,8 @@ struct ScenarioSelectionTests {
             "remote metadataUpdate item:dataless kind:folderWithChildren at:standard:subdirectory",
             "remote metadataUpdate item:evicted kind:file size:small at:standard:root",
             "remote metadataUpdate item:evicted kind:file size:small at:standard:subdirectory",
+            "remote metadataUpdate item:materialized kind:bundle at:standard:root",
+            "remote metadataUpdate item:materialized kind:bundle at:standard:subdirectory",
             "remote metadataUpdate item:materialized kind:file size:small at:standard:root",
             "remote metadataUpdate item:materialized kind:file size:small at:standard:subdirectory",
             "remote metadataUpdate item:materialized kind:folderEmpty at:standard:root",
@@ -43,12 +49,6 @@ struct ScenarioSelectionTests {
             "remote metadataUpdate item:materialized kind:folderWithChildren at:standard:subdirectory",
             "remote metadataUpdate item:materializedDeep kind:folderWithChildren at:standard:root",
             "remote metadataUpdate item:materializedDeep kind:folderWithChildren at:standard:subdirectory",
-            "remote metadataUpdate item:dataless kind:bundle at:standard:root",
-            "remote metadataUpdate item:dataless kind:bundle at:standard:root enc:nfc",
-            "remote metadataUpdate item:dataless kind:bundle at:standard:root enc:nfd",
-            "remote metadataUpdate item:dataless kind:bundle at:standard:subdirectory",
-            "remote metadataUpdate item:materialized kind:bundle at:standard:root",
-            "remote metadataUpdate item:materialized kind:bundle at:standard:subdirectory",
         ]
 
         #expect(RemoteMetadataUpdateTests.cells.map(\.description) == expected, """
@@ -99,6 +99,10 @@ struct ScenarioSelectionTests {
             "remote delete item:evicted kind:file size:small at:standard:root trash:without",
             "remote delete item:evicted kind:file size:small at:standard:subdirectory trash:with",
             "remote delete item:evicted kind:file size:small at:standard:subdirectory trash:without",
+            "remote delete item:materialized kind:bundle at:standard:root trash:with",
+            "remote delete item:materialized kind:bundle at:standard:root trash:without",
+            "remote delete item:materialized kind:bundle at:standard:subdirectory trash:with",
+            "remote delete item:materialized kind:bundle at:standard:subdirectory trash:without",
             "remote delete item:materialized kind:file size:small at:standard:root trash:with",
             "remote delete item:materialized kind:file size:small at:standard:root trash:without",
             "remote delete item:materialized kind:file size:small at:standard:subdirectory trash:with",
@@ -115,10 +119,6 @@ struct ScenarioSelectionTests {
             "remote delete item:materializedDeep kind:folderWithChildren at:standard:root trash:without",
             "remote delete item:materializedDeep kind:folderWithChildren at:standard:subdirectory trash:with",
             "remote delete item:materializedDeep kind:folderWithChildren at:standard:subdirectory trash:without",
-            "remote delete item:materialized kind:bundle at:standard:root trash:with",
-            "remote delete item:materialized kind:bundle at:standard:root trash:without",
-            "remote delete item:materialized kind:bundle at:standard:subdirectory trash:with",
-            "remote delete item:materialized kind:bundle at:standard:subdirectory trash:without",
         ]
 
         #expect(RemoteDeleteTests.cells.map(\.description) == expected, """

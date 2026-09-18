@@ -27,15 +27,19 @@ enum KnownLimitation {
             return nil
         }
 
-        // Not every operation on a package is refused, which the first run of these cells established by failing this expectation rather than the cell: deleting a package the client has never downloaded reaches the server like any other deletion, in all four of its cells. Only a package the client holds locally is in the ignore list, and only those deletions are dropped.
+        // What is refused is the client **uploading** a package, and nothing else. A package created on the server arrives in the client normally — five cells said so by failing this expectation rather than the cell — and deleting one the client never downloaded reaches the server like any other deletion.
         //
-        // Narrowed to what was measured rather than to what the log line sounded like. The wording — "Refusing to sync bundle or package" — reads as though it covers everything, and it does not.
+        // Narrowed twice now, each time by a run contradicting it. The log line — "Refusing to sync bundle or package" — reads as though it covers everything, and each narrowing came from cells which were run rather than excluded. That is the argument for running them, made twice by the suite itself.
+        guard !cell.hasPrefix("remote ") else {
+            return nil
+        }
+
         guard !(cell.contains(" delete ") && cell.contains("item:dataless")) else {
             return nil
         }
 
         return """
-        The client does not synchronise packages it holds locally, deliberately and in both directions. Its extension says so in its own log — "Refusing to sync bundle or package because this is not supported" — then adds the name to an ignore list and reports the exclusion to the main app over XPC. Measured on 2026-09-17: a package created in the client never reaches the server, a rename of one never leaves the Mac, and deleting one the client has downloaded is dropped — while deleting one it has never downloaded works, which is why that case is not expected to fail.
+        The client does not upload packages, deliberately. Its extension says so in its own log — "Refusing to sync bundle or package because this is not supported" — then adds the name to an ignore list and reports the exclusion to the main app over XPC. Measured on 2026-09-17 and 2026-09-18: a package created in the client never reaches the server, a rename of one never leaves the Mac, and deleting one the client has downloaded is dropped. What does work, and is therefore not expected to fail here: a package created on the server arriving in the client, and deleting one the client never downloaded.
 
         Disabled by https://github.com/nextcloud/desktop/pull/9971; restoring it is tracked by https://github.com/nextcloud/desktop/issues/9827. When it lands, these cells stop failing and this expectation becomes the thing that fails — which is how the suite tells somebody to delete this entry rather than leaving ninety-three cells quietly untested.
         """

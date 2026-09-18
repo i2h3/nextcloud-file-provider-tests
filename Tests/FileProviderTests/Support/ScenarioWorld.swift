@@ -582,7 +582,13 @@ enum ScenarioWorld {
 
             // Nothing to do, and nothing may be done: this container must not be listed by anything between here and the operation.
 
-            case .unknown, .evicted, .materializedDeep:
+            case .materializedDeep:
+                // A container is deeply materialized by being entered and then having its children fetched — the same one level down the item case takes, because that is the only depth the system offers. For a create the container is usually empty at this point, which makes this the same as materialized; the cell still differs in what it claims, and claiming it correctly costs one listing.
+                for child in try room.localChildren(of: path) where child.kind == .file {
+                    _ = try Materialization.materialize(room.localURL(of: path.isEmpty ? child.name : "\(path)/\(child.name)"))
+                }
+
+            case .unknown, .evicted:
                 throw ScenarioWorldError.unsupported("a container at \(level.rawValue), which this harness cannot establish and confirm")
         }
     }
