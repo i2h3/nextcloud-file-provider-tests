@@ -35,7 +35,8 @@ public enum RunIndex {
     public static func render(_ evidence: RunEvidence) -> String {
         let rooms = evidence.rooms.sorted { ($0.cell ?? $0.testName) < ($1.cell ?? $1.testName) }
         let samples = latencies(in: evidence.directory)
-        let failuresByRoom = attribute(evidence.failures, to: rooms)
+        let seen = observations(in: evidence.directory)
+        let failuresByRoom = attribute(evidence)
         let quadrants = group(rooms)
 
         var html = header(evidence)
@@ -43,7 +44,7 @@ public enum RunIndex {
         html += summary(rooms: rooms, failures: evidence.failures, quadrants: quadrants, samples: samples)
 
         for (quadrant, members) in quadrants.sorted(by: { $0.key < $1.key }) {
-            html += section(quadrant, rooms: members, failures: failuresByRoom, samples: samples)
+            html += section(quadrant, rooms: members, failures: failuresByRoom, samples: samples, observations: seen)
         }
 
         html += unattributed(evidence.failures, attributed: failuresByRoom)
@@ -93,35 +94,20 @@ public enum RunIndex {
     }
 
     ///
-    /// Attach each failure to the room whose window contains it.
+    /// Attach each failure to the room it happened in.
     ///
-    /// Everything is serialized and one room is occupied at a time, so a failure's instant identifies its room without ambiguity. A failure with no timestamp, or one which happened while no room was open, is left out and listed separately rather than attached to a plausible neighbour.
+    /// The rule itself is ``RunEvidence/room(of:)`` and deliberately not repeated here. It used to be: this file carried its own window check plus a correction for errors recorded after their room was torn down, and the report generator carried the window check without the correction — so the page named the right room while the documents drafted from the same run named none at all. One rule, one place.
     ///
     /// - Parameters:
-    ///     - failures: What went wrong.
-    ///     - rooms: The rooms of the run.
+    ///     - evidence: The run.
     ///
     /// - Returns: The failures of each room, by user.
     ///
-    static func attribute(_ failures: [ReportedFailure], to rooms: [RoomManifest]) -> [String: [ReportedFailure]] {
+    static func attribute(_ evidence: RunEvidence) -> [String: [ReportedFailure]] {
         var attributed = [String: [ReportedFailure]]()
 
-        for failure in failures {
-            guard let instant = failure.occurredAt else {
-                continue
-            }
-
-            if let room = rooms.first(where: { $0.startedAt <= instant && ($0.endedAt ?? Date.distantFuture) >= instant }) {
-                attributed[room.user, default: []].append(failure)
-
-                continue
-            }
-
-            // An error which escapes the room's body is recorded after the room has been torn down and stamped with its end, so it falls a moment outside its own window. Attaching it to the nearest room which had just closed — and only when that room belongs to the same test — keeps those failures with their evidence instead of orphaning them, which is what happened to every known issue in the first run that had any.
-            guard let room = rooms
-                .filter({ ($0.endedAt ?? $0.startedAt) <= instant && $0.testIdentifier == failure.testIdentifier })
-                .max(by: { ($0.endedAt ?? $0.startedAt) < ($1.endedAt ?? $1.startedAt) })
-            else {
+        for failure in evidence.failures {
+            guard let room = evidence.room(of: failure) else {
                 continue
             }
 
@@ -233,6 +219,7 @@ public enum RunIndex {
         a { color: var(--accent); text-decoration: none; }
         a:hover { text-decoration: underline; }
         .why { color: var(--dim); font-size: 12.5px; margin: .2rem 0 0; }
+        .saw { color: var(--dim); font-size: 12.5px; margin: .2rem 0 0; padding-left: .75rem; border-left: 2px solid var(--line); }
         tr.failed td { background: color-mix(in srgb, var(--fail) 8%, transparent); }
         @media (max-width: 600px) { body { padding: 1rem .75rem 3rem; } .facts th { width: auto; } }
         </style></head><body><main>
@@ -358,8 +345,38 @@ public enum RunIndex {
         <tr><th><span class="bad">failed</span></th><td>An assertion did not hold, or the cell raised before reaching one. The second is not a finding about the client — a cell whose world could not be built measured nothing. The message is on the row and the client and extension logs are behind the link.</td></tr>
         <tr><th><span class="meh">known limitation</span></th><td>The cell failed and was expected to. Its subject declines the feature deliberately and the reason is on the row. It runs anyway, so that the day the client starts doing what the cell asks, the expectation fails instead and somebody is told — coverage nobody can forget to switch back on.</td></tr>
         <tr><th><span class="meh">no measurement</span></th><td>The cell ran and nothing went wrong, but no timing was recorded. Either its suite measures nothing, or the cell declined to measure: a concurrent write whose two sides did not overlap has no conflict to resolve and says so rather than passing quietly.</td></tr>
+        <tr><th>observed</th><td>An indented note under a cell, on passing rows as much as failing ones. It is something the cell saw and is <em>not</em> entitled to assert, because the system is allowed either answer — whether a volume holds two names differing only by case, or renames the arriving one. Demanding one of them would fail on a machine formatted the other way; accepting both silently would leave the axis measuring nothing. So the run records which happened here.</td></tr>
         </table>
         """
+    }
+
+    ///
+    /// Read what the cells of a run saw but did not judge.
+    ///
+    /// - Parameters:
+    ///     - directory: The run's directory.
+    ///
+    /// - Returns: The observations, by the clean room they were made in.
+    ///
+    static func observations(in directory: URL) -> [String: [Observation]] {
+        let attachments = directory.appending(path: "attachments", directoryHint: .isDirectory)
+        let decoder = JSONDecoder()
+
+        guard let entries = try? FileManager.default.contentsOfDirectory(at: attachments, includingPropertiesForKeys: nil) else {
+            return [:]
+        }
+
+        var found = [String: [Observation]]()
+
+        for entry in entries where entry.lastPathComponent.hasSuffix(Observation.attachmentSuffix) {
+            guard let data = try? Data(contentsOf: entry), let observation = try? decoder.decode(Observation.self, from: data) else {
+                continue
+            }
+
+            found[observation.user, default: []].append(observation)
+        }
+
+        return found.mapValues { $0.sorted { $0.recordedAt < $1.recordedAt } }
     }
 
     ///
@@ -370,10 +387,11 @@ public enum RunIndex {
     ///     - rooms: Its rooms.
     ///     - failures: The failures of each room, by user.
     ///     - samples: The measurements, by cell.
+    ///     - observations: What the cells saw and did not judge, by clean room.
     ///
     /// - Returns: The markup.
     ///
-    static func section(_ quadrant: String, rooms: [RoomManifest], failures: [String: [ReportedFailure]], samples: [String: [LatencySample]]) -> String {
+    static func section(_ quadrant: String, rooms: [RoomManifest], failures: [String: [ReportedFailure]], samples: [String: [LatencySample]], observations: [String: [Observation]]) -> String {
         var rows = ""
 
         for room in rooms {
@@ -394,7 +412,10 @@ public enum RunIndex {
                 status = "<span class=\"bad\">failed</span>"
             }
 
-            let detail = mine.map { "<p class=\"why\">\(escape($0.message))</p>" }.joined()
+            var detail = mine.map { "<p class=\"why\">\(escape($0.message))</p>" }.joined()
+
+            // Shown on a passing row as readily as on a failing one, which is the point of it. An observation is what the cell was not entitled to assert, so the row says "passed" either way and this is the only place the run says which of the permitted things happened.
+            detail += (observations[room.user] ?? []).map { "<p class=\"saw\">\(escape($0.text))</p>" }.joined()
             let elapsed = room.endedAt.map { $0.timeIntervalSince(room.startedAt) }
 
             rows += """

@@ -238,7 +238,12 @@ enum ScenarioWorld {
         try await ScenarioWorldError.doing("waiting for \"\(localPath)\" to reach the client") {
             guard mustNotEnterParent else {
                 // Polling the parent, one level, never the item. A listing is `readdir` plus one `lstat` per entry, so it neither opens nor reads anything.
-                try await Waiter.waitUntilBlocking("\"\(name)\" reaches the client", timeout: LiveEnvironment.scaled(.seconds(180))) {
+                try await Waiter.waitUntilBlocking(
+                    "\"\(name)\" reaches the client",
+                    timeout: LiveEnvironment.scaled(.seconds(180)),
+                    // The condition has to swallow its error to keep polling, because "not yet" and "never" are the same absence to a directory listing. This is where what it swallowed is finally said, and it is not a nicety: three timeouts reading "before-Sibling.bin never reached the client" were a container holding that name's lowercase sibling and nothing else, which is a sentence about the client rather than about the wait.
+                    diagnosis: { describe(parentLocalPath, in: room) }
+                ) {
                     // Asked for by whatever the client decided to call it, because a cell which arranged a name collision does not get the name it asked for and waiting for that one would wait forever.
                     (try? resolveLocalName(of: name, for: scenario, under: parentLocalPath, in: room)) != nil
                 }
@@ -249,7 +254,12 @@ enum ScenarioWorld {
             // The container must still be unentered when the operation happens, so the item is awaited by looking it up directly rather than by listing what it is in.
             //
             // This rests on an assumption nobody has measured: that a name lookup inside a container which was never enumerated does not drive that container's enumerator. If it is wrong, the lookup either never succeeds — and this wait times out, saying so — or it succeeds by enumerating, in which case the cell silently measures the materialized case instead. The first is loud and the second is why the ledger is asserted immediately afterwards.
-            try await Waiter.waitUntilBlocking("\"\(localPath)\" can be looked up without entering its container", timeout: LiveEnvironment.scaled(.seconds(180))) {
+            try await Waiter.waitUntilBlocking(
+                "\"\(localPath)\" can be looked up without entering its container",
+                timeout: LiveEnvironment.scaled(.seconds(180)),
+                // Deliberately not a listing. Everywhere else the diagnosis lists the container to say what was there instead, and here that listing is the exact thing the cell forbids — a timeout is not a reason to perform the enumeration the cell was built to avoid, because the next thing anyone reads is the diagnosis and it would be describing a container this line had just changed.
+                diagnosis: { "nothing at that path, and its container was left unlisted because entering it is what this cell forbids" }
+            ) {
                 try LocalNode.at(url) != nil
             }
 
@@ -361,6 +371,33 @@ enum ScenarioWorld {
     }
 
     ///
+    /// What a container holds, in a form a timeout can be read with.
+    ///
+    /// Only ever called when a wait has already run out, so the listing it performs costs nothing the cell still needed — and the cell it describes is over either way.
+    ///
+    /// - Parameters:
+    ///     - path: The container, relative to the domain.
+    ///     - room: The room.
+    ///
+    /// - Returns: The sentence.
+    ///
+    static func describe(_ path: String, in room: CleanRoom) -> String {
+        let place = path.isEmpty ? "the domain's root" : "\"\(path)\""
+
+        do {
+            let names = try room.localChildren(of: path).map(\.name).sorted()
+
+            guard !names.isEmpty else {
+                return "\(place) empty"
+            }
+
+            return "\(place) holding \(names.joined(separator: ", "))"
+        } catch {
+            return "\(place) could not be listed: \(error)"
+        }
+    }
+
+    ///
     /// The name of the sibling a colliding cell needs to collide with.
     ///
     /// The same name in a different case, which is what "differs only by case" means, and what a case-insensitive volume cannot hold twice.
@@ -412,7 +449,7 @@ enum ScenarioWorld {
             ExtendedAttribute.string(of: ExtendedAttribute.beforeBounce, at: room.localURL(of: parentLocalPath.isEmpty ? entry.name : "\(parentLocalPath)/\(entry.name)")) == name
         }) {
             // Recorded rather than asserted, and recorded precisely because both outcomes are legal. Which one a volume produces is a property of the volume, so a cell demanding either would fail on a machine formatted differently — and a cell which quietly accepted both would pass without saying what it saw, which is how an axis stops measuring anything.
-            ScenarioOracle.observe("\"\(name)\" was bounced to \"\(bounced.name)\" because \"\(sibling)\" already held the name")
+            ScenarioOracle.observe("\"\(name)\" was bounced to \"\(bounced.name)\" because \"\(sibling)\" already held the name", in: room)
 
             return bounced.name
         }
@@ -424,7 +461,7 @@ enum ScenarioWorld {
             """)
         }
 
-        ScenarioOracle.observe("\"\(name)\" and \"\(sibling)\" are both held, so this volume distinguishes them by case and no bounce was needed")
+        ScenarioOracle.observe("\"\(name)\" and \"\(sibling)\" are both held, so this volume distinguishes them by case and no bounce was needed", in: room)
 
         return name
     }
@@ -517,7 +554,11 @@ enum ScenarioWorld {
             _ = try await room.waitForRemoteEntry(named: name)
         }
 
-        try await Waiter.waitUntilBlocking("\"\(name)\" reaches the client", timeout: LiveEnvironment.scaled(.seconds(180))) {
+        try await Waiter.waitUntilBlocking(
+            "\"\(name)\" reaches the client",
+            timeout: LiveEnvironment.scaled(.seconds(180)),
+            diagnosis: { describe("", in: room) }
+        ) {
             try room.localChildren().contains { $0.name == name && $0.kind == .directory }
         }
 

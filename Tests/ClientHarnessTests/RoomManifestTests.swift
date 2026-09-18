@@ -8,7 +8,7 @@ import Testing
 ///
 /// Tests for ``RoomManifest``.
 ///
-/// A clean room's directory is named after the Nextcloud user it created, and that name is derived from a short label which has nothing to do with the name of the test function. Without this record a failure cannot be connected to the only logs which could explain it, so what is pinned here is the connection: the identity it carries, and the window by which a failure is placed in a room even when the identity is missing.
+/// A clean room's directory is named after the Nextcloud user it created, and that name is derived from a short label which has nothing to do with the name of the test function. Without this record a failure cannot be connected to the only logs which could explain it, so what is pinned here is the connection it carries: the identity, the user, the server, and the window a failure is placed by when the identity is missing. Placing a moment in that window is ``RunEvidenceTests``.
 ///
 @Suite("Room manifest")
 struct RoomManifestTests {
@@ -63,39 +63,7 @@ struct RoomManifestTests {
     }
 
     ///
-    /// This is what attributes a failure to a server. Rooms never overlap, so the room whose window holds the moment a test failed is the room that test ran in — which is how the argument is recovered without the testing library naming it.
-    ///
-    @Test
-    func `A moment inside the room's life is recognised as belonging to it.`() {
-        let manifest = Self.makeManifest()
-
-        #expect(manifest.contains(Date(timeIntervalSince1970: 1_000_030)))
-        #expect(manifest.contains(Date(timeIntervalSince1970: 1_000_000)))
-        #expect(manifest.contains(Date(timeIntervalSince1970: 1_000_060)))
-    }
-
-    @Test
-    func `A moment outside the room's life is not.`() {
-        let manifest = Self.makeManifest()
-
-        #expect(!manifest.contains(Date(timeIntervalSince1970: 999_999)))
-        #expect(!manifest.contains(Date(timeIntervalSince1970: 1_000_061)))
-    }
-
-    ///
-    /// A room whose teardown never finished is exactly the case where something went wrong inside it, so it stays open rather than swallowing every later moment or none.
-    ///
-    @Test
-    func `A room which never recorded its end stays open.`() {
-        var manifest = Self.makeManifest()
-        manifest.endedAt = nil
-
-        #expect(manifest.contains(Date(timeIntervalSince1970: 2_000_000)))
-        #expect(!manifest.contains(Date(timeIntervalSince1970: 999_999)))
-    }
-
-    ///
-    /// The identity comes from the testing library and may be absent. The window may not, which is why attribution rests on it.
+    /// The identity comes from the testing library and may be absent. The window may not, which is why attribution rests on it — see ``RunEvidenceTests`` for the rule which reads it.
     ///
     @Test
     func `A manifest without a test identity is still usable.`() throws {
@@ -111,7 +79,6 @@ struct RoomManifestTests {
         let read = try #require(RoomManifest.read(from: directory))
         #expect(read.testIdentifier == nil)
         #expect(read.testDisplayName == nil)
-        #expect(read.contains(read.startedAt))
     }
 
     @Test

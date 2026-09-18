@@ -38,11 +38,12 @@ public enum Waiter {
     ///     - expectation: What is awaited, phrased so that it reads as a sentence after "waiting until".
     ///     - timeout: How long to wait before giving up.
     ///     - attemptTimeout: How long a single evaluation of the condition may take before it is abandoned. Defaults to ``attemptTimeout``.
+    ///     - diagnosis: What the last look found, evaluated once if the wait runs out. A condition which swallows its own errors to keep polling knows why it is still false, and this is where it says so — see ``WaitTimeoutError/diagnosis``.
     ///     - condition: The condition to evaluate repeatedly, on a thread of its own.
     ///
     /// - Throws: ``WaitTimeoutError`` if the condition does not hold in time, or whatever the condition itself throws.
     ///
-    public static func waitUntilBlocking(_ expectation: String, timeout: Duration, attemptTimeout: Duration = attemptTimeout, condition: @escaping @Sendable () throws -> Bool) async throws {
+    public static func waitUntilBlocking(_ expectation: String, timeout: Duration, attemptTimeout: Duration = attemptTimeout, diagnosis: (@Sendable () -> String?)? = nil, condition: @escaping @Sendable () throws -> Bool) async throws {
         let deadline = ContinuousClock.now + timeout
         var pollInterval = initialPollInterval
 
@@ -55,7 +56,7 @@ public enum Waiter {
             }
 
             guard ContinuousClock.now < deadline else {
-                throw WaitTimeoutError(expectation: expectation, timeout: timeout)
+                throw WaitTimeoutError(expectation: expectation, timeout: timeout, diagnosis: diagnosis?())
             }
 
             try await Task.sleep(for: pollInterval)
@@ -70,11 +71,12 @@ public enum Waiter {
     ///     - expectation: What is awaited, phrased so that it reads as a sentence after "waiting until".
     ///     - timeout: How long to wait before giving up.
     ///     - attemptTimeout: How long a single evaluation of the condition may take before it is abandoned. Defaults to ``attemptTimeout``.
+    ///     - diagnosis: What the last look found, evaluated once if the wait runs out. See ``WaitTimeoutError/diagnosis``.
     ///     - condition: The condition to evaluate repeatedly.
     ///
     /// - Throws: ``WaitTimeoutError`` if the condition does not hold in time, or whatever the condition itself throws.
     ///
-    public static func waitUntil(_ expectation: String, timeout: Duration, attemptTimeout: Duration = attemptTimeout, condition: @escaping @Sendable () async throws -> Bool) async throws {
+    public static func waitUntil(_ expectation: String, timeout: Duration, attemptTimeout: Duration = attemptTimeout, diagnosis: (@Sendable () -> String?)? = nil, condition: @escaping @Sendable () async throws -> Bool) async throws {
         let deadline = ContinuousClock.now + timeout
         var pollInterval = initialPollInterval
 
@@ -87,7 +89,7 @@ public enum Waiter {
             }
 
             guard ContinuousClock.now < deadline else {
-                throw WaitTimeoutError(expectation: expectation, timeout: timeout)
+                throw WaitTimeoutError(expectation: expectation, timeout: timeout, diagnosis: diagnosis?())
             }
 
             try await Task.sleep(for: pollInterval)
@@ -103,11 +105,12 @@ public enum Waiter {
     /// - Parameters:
     ///     - expectation: What is awaited, phrased so that it reads as a sentence after "waiting until".
     ///     - timeout: How long to wait before giving up.
+    ///     - diagnosis: What the last look found, evaluated once if the wait runs out. See ``WaitTimeoutError/diagnosis``.
     ///     - condition: The condition to evaluate repeatedly.
     ///
     /// - Throws: ``WaitTimeoutError`` if the condition does not hold in time, or whatever the condition itself throws.
     ///
-    public static func poll(_ expectation: String, timeout: Duration, condition: () async throws -> Bool) async throws {
+    public static func poll(_ expectation: String, timeout: Duration, diagnosis: (() -> String?)? = nil, condition: () async throws -> Bool) async throws {
         let deadline = ContinuousClock.now + timeout
         var pollInterval = initialPollInterval
 
@@ -117,7 +120,7 @@ public enum Waiter {
             }
 
             guard ContinuousClock.now < deadline else {
-                throw WaitTimeoutError(expectation: expectation, timeout: timeout)
+                throw WaitTimeoutError(expectation: expectation, timeout: timeout, diagnosis: diagnosis?())
             }
 
             try await Task.sleep(for: pollInterval)

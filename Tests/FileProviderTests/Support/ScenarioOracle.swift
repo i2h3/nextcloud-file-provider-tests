@@ -139,11 +139,22 @@ enum ScenarioOracle {
     ///
     /// Printed once per occurrence rather than once per run, because the same cell can observe different things on different machines and the value is in knowing which happened here.
     ///
+    /// Attached as well as printed. An observation which only reaches the terminal is gone by the time anyone opens the artifacts, and what the encoding axis exists to find out — whether this volume held both names or renamed one — would then be a thing the run knew and did not keep.
+    ///
     /// - Parameters:
     ///     - observation: What happened.
+    ///     - room: The room it happened in, which is what ties it to a cell.
     ///
-    static func observe(_ observation: String) {
+    static func observe(_ observation: String, in room: CleanRoom) {
         print("  observed: \(observation)")
+
+        let record = Observation(text: observation, user: room.user.identifier)
+
+        guard let data = try? JSONEncoder().encode(record) else {
+            return
+        }
+
+        Attachment.record(data, named: "\(room.user.identifier)-\(UUID().uuidString.prefix(8))\(Observation.attachmentSuffix)")
     }
 
     ///

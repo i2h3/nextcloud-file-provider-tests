@@ -29,6 +29,8 @@ public struct RunEvidence: Sendable {
     ///
     /// The clean rooms of the run, in the order they were built.
     ///
+    /// Ordered by when they began, which ``room(of:)`` depends on and the initializer guarantees.
+    ///
     public let rooms: [RoomManifest]
 
     ///
@@ -54,24 +56,40 @@ public struct RunEvidence: Sendable {
     /// - Returns: The room, or `nil` if it cannot be placed.
     ///
     public func room(of failure: ReportedFailure) -> RoomManifest? {
-        // The window is the reliable way, because it needs nothing of the testing library beyond a timestamp.
-        //
-        // The latest match rather than the first: a room whose end was never recorded has an open-ended window, so taking the first would let the earliest unclosed room of the run swallow every later moment.
-        if let occurredAt = failure.occurredAt {
-            let candidates = rooms.filter { $0.contains(occurredAt) }
+        guard let occurredAt = failure.occurredAt else {
+            // Read from the xUnit report, which carries no timestamps at all. A room knows which test asked for it, so an exact and unambiguous match is the only thing left — and a parameterized test has one room per case, so this almost never resolves.
+            let candidates = rooms.filter { $0.testIdentifier == failure.testIdentifier }
 
-            if let placed = candidates.max(by: { $0.startedAt < $1.startedAt }) {
-                return placed
-            }
+            return candidates.count == 1 ? candidates.first : nil
         }
 
-        // Failing that, a room knows which test asked for it — but only an exact, unambiguous match will do.
+        // The room which was standing when the failure was recorded, where "standing" reaches to the moment the next room began rather than to the moment this one was torn down.
         //
-        // This used to match the *suite* and take the first hit, which meant every failure the window could not place was handed the earliest room of its whole suite: a different test's throwaway user, a different test's domain, and a different test's extension log, all quoted as this failure's own evidence and all internally consistent. Four drafts on disk say exactly that. It fires on every thrown error, because the library records the issue after the room has been torn down, and on every failure read from the xUnit report, which carries no timestamps at all.
-        let candidates = rooms.filter { $0.testIdentifier == failure.testIdentifier }
+        // The distinction is the whole of it. A thrown error is recorded by the testing library *after* the room it happened in has been torn down, so its moment lies a fraction of a second past the room's own `endedAt` and a window closed at `endedAt` can never contain it. That is not an edge case: it is every failure which throws rather than fails an expectation, which was all three in the run this was written for, each of them drafted with no log, no domain and no server named.
+        //
+        // Reaching to the next room's start is sound because rooms do not overlap — `CleanRoom.isOccupied` refuses to build a second one — so nothing else can have been running in the gap between one room's teardown and the next one's construction. The last room of a run is bounded by the run's own end instead, and by its teardown plus a grace if the run never recorded one.
+        guard let index = rooms.lastIndex(where: { $0.startedAt <= occurredAt }) else {
+            return nil
+        }
 
-        return candidates.count == 1 ? candidates.first : nil
+        let room = rooms[index]
+        let successor = rooms.indices.contains(index + 1) ? rooms[index + 1].startedAt : nil
+        let runEnd = manifest.flatMap(\.finishedAt)
+
+        guard let limit = successor ?? runEnd ?? room.endedAt?.addingTimeInterval(Self.teardownGrace) else {
+            // A room which never recorded an end, in a run which never recorded an end either. Nothing bounds it, and a room that owns all later time would swallow failures belonging to nobody.
+            return room
+        }
+
+        return occurredAt <= limit ? room : nil
     }
+
+    ///
+    /// How long after a room's teardown a failure may still be attributed to it.
+    ///
+    /// Only ever reached by the last room of a run whose own end went unrecorded. The interval is the gap between a room being torn down and the testing library recording the issue which caused it, which is the cost of writing the manifest and copying the logs — measured in fractions of a second, and given a margin here rather than a measurement.
+    ///
+    static let teardownGrace: TimeInterval = 60
 
     ///
     /// Gather what a run left behind.
@@ -136,7 +154,7 @@ public struct RunEvidence: Sendable {
     ///     - directory: The run's directory.
     ///     - manifest: What the run was.
     ///     - failures: What went wrong.
-    ///     - rooms: The clean rooms of the run.
+    ///     - rooms: The clean rooms of the run, in any order.
     ///     - hasCaseAttribution: Whether it can be said which case failed.
     ///
     public init(directory: URL, manifest: RunManifest?, failures: [ReportedFailure], rooms: [RoomManifest], hasCaseAttribution: Bool) {
@@ -144,6 +162,7 @@ public struct RunEvidence: Sendable {
         self.failures = failures
         self.hasCaseAttribution = hasCaseAttribution
         self.manifest = manifest
-        self.rooms = rooms
+        // Sorted here rather than asked for sorted, because ``room(of:)`` reads one room's successor to know where it ends and would place failures in the wrong rooms, silently, given any other order. A caller which has its own order — the index sorts rooms by cell — then cannot break it by passing that order in.
+        self.rooms = rooms.sorted { $0.startedAt < $1.startedAt }
     }
 }

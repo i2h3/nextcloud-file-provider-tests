@@ -8,7 +8,9 @@ import Foundation
 ///
 /// Without this a run's artifacts cannot be read. A clean room's directory is named after the Nextcloud user it created, which is derived from the short label a test passes when it asks for a room — and that label has nothing to do with the name of the test function. So a failure reported against `A file changed on both sides at once does not lose the server's version.` has no discoverable connection to the directory holding the only logs which could explain it.
 ///
-/// The window matters as much as the name. Rooms are built one at a time and never overlap, which is enforced rather than assumed, so the room whose window contains the moment a test failed is unambiguously the room that test ran in. That is what makes it possible to attribute a failure to a server without the test framework telling anyone which argument it was running.
+/// The window matters as much as the name. Rooms are built one at a time and never overlap, which is enforced rather than assumed, so the room standing at the moment a test failed is unambiguously the room that test ran in.
+///
+/// Placing a moment in that window is deliberately not a method here. A thrown error is recorded after its room has been torn down, so `startedAt ... endedAt` excludes exactly the failures worth placing, and the rule needs the *next* room's start to be right. It lives with the rooms in ``RunEvidence/room(of:)``, where the whole ordered sequence is in hand. That is what makes it possible to attribute a failure to a server without the test framework telling anyone which argument it was running.
 ///
 public struct RoomManifest: Codable, Sendable {
     ///
@@ -76,28 +78,6 @@ public struct RoomManifest: Codable, Sendable {
     /// The name of the file a manifest is written to inside a clean room's directory.
     ///
     public static let fileName = "room.json"
-
-    ///
-    /// Whether a moment falls inside this room's life.
-    ///
-    /// A room which never recorded its end is treated as open, because a room whose teardown did not finish is exactly the case where something went wrong inside it.
-    ///
-    /// - Parameters:
-    ///     - moment: The moment to place.
-    ///
-    /// - Returns: `true` if the room was standing then.
-    ///
-    public func contains(_ moment: Date) -> Bool {
-        guard moment >= startedAt else {
-            return false
-        }
-
-        guard let endedAt else {
-            return true
-        }
-
-        return moment <= endedAt
-    }
 
     ///
     /// Write the manifest into a clean room's directory.
