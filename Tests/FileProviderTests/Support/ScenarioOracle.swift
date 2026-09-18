@@ -96,6 +96,57 @@ enum ScenarioOracle {
     """
 
     ///
+    /// Judge whether the container holds one item per name, where that is a question a test process can answer.
+    ///
+    /// For most cells it is not, and the clause is declined: a POSIX directory cannot hold two entries under one name, so reading a listing and finding one of each asserts that the file system works.
+    ///
+    /// The encoding cells are the exception, and the reason the axis exists at all. Precomposed and decomposed forms of the same name are **different byte sequences**, so a directory can hold both — and it will, if the client compares the name it received against the name on disk without normalising either side. That is not hypothetical: macOS writes decomposed and a Nextcloud server stores what it was sent, so an asymmetric policy shows up as a second copy of a file somebody already has.
+    ///
+    /// A name which differs only by case is the same question on a volume which folds case, where the two cannot coexist and one has to give way.
+    ///
+    /// - Parameters:
+    ///     - cell: The cell, whose encoding says whether this is answerable.
+    ///     - name: The name the item was given.
+    ///     - parentLocalPath: The container to read, relative to the domain.
+    ///     - room: The room.
+    ///
+    static func judgeDuplicates(for cell: Scenario, named name: String, under parentLocalPath: String, in room: CleanRoom) {
+        guard cell.encoding != nil else {
+            decline("noDuplicatesOrOrphans", because: posixListingReason)
+
+            return
+        }
+
+        guard let entries = try? room.localChildren(of: parentLocalPath) else {
+            decline("noDuplicatesOrOrphans", because: "the container could not be listed, so nothing about what it holds follows")
+
+            return
+        }
+
+        // Compared in one form, because that is the comparison the clause is about. Counting raw bytes would find one of each and call a duplicate a pass.
+        let wanted = name.precomposedStringWithCanonicalMapping
+        let matching = entries.filter { $0.name.precomposedStringWithCanonicalMapping == wanted }
+
+        #expect(matching.count <= 1, """
+        The container holds \(matching.count) items whose names are the same once normalised, so a person sees the file twice. It holds: \(entries.map(\.name).sorted().joined(separator: ", ")). macOS writes decomposed names and the server stores what it was sent, so a comparison which does not normalise both sides reports two items where there is one — and then writes the second.
+        """)
+    }
+
+    ///
+    /// Record something a cell observed which it is not entitled to assert.
+    ///
+    /// Distinct from a decline, which says a clause could not be judged, and from an expectation, which says what had to hold. This is the third thing a run produces: a legal outcome worth seeing, where the specification or the machine permits more than one and demanding either would make the cell fail somewhere reasonable.
+    ///
+    /// Printed once per occurrence rather than once per run, because the same cell can observe different things on different machines and the value is in knowing which happened here.
+    ///
+    /// - Parameters:
+    ///     - observation: What happened.
+    ///
+    static func observe(_ observation: String) {
+        print("  observed: \(observation)")
+    }
+
+    ///
     /// Which clauses have already been reported in this run.
     ///
     /// A declined clause is a property of the suite rather than of a case: it is declined for the same reason every time, and a generated suite runs the same case body dozens of times. Printing it per case buries the run in two identical paragraphs per case — which is not merely noisy, it teaches a reader to skim exactly the part that says what is not covered.

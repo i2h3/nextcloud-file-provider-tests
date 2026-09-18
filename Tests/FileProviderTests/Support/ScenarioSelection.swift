@@ -53,13 +53,6 @@ enum ScenarioSelection {
             return false
         }
 
-        // The item's name changes on arrival, which every path this harness computes is derived from. A cell whose item lands under a name the suite did not choose needs the bounced name threaded through ``ScenarioSubject`` and out to every assertion; until that exists the cell would fail because the harness looked in the wrong place, which is the most expensive kind of false report.
-        //
-        // The evidence itself is no longer the obstacle: ``ExtendedAttribute/beforeBounce`` reads the name the system bounced from, so a cell can say which name was rejected rather than only that two collided. What remains is plumbing.
-        guard scenario.encoding != .caseCollision else {
-            return false
-        }
-
         // Sharing and group folders need provisioning through OCS and the groupfolders application, neither of which this harness speaks.
         guard scenario.site.placements.allSatisfy({ $0.container.type == .standard }) else {
             return false

@@ -22,18 +22,22 @@ struct ScenarioSelectionTests {
     func `The remote metadata update suite runs the cells it is meant to.`() {
         let expected = [
             "remote metadataUpdate item:dataless kind:bundle at:standard:root",
+            "remote metadataUpdate item:dataless kind:bundle at:standard:root enc:caseCollision",
             "remote metadataUpdate item:dataless kind:bundle at:standard:root enc:nfc",
             "remote metadataUpdate item:dataless kind:bundle at:standard:root enc:nfd",
             "remote metadataUpdate item:dataless kind:bundle at:standard:subdirectory",
             "remote metadataUpdate item:dataless kind:file size:small at:standard:root",
+            "remote metadataUpdate item:dataless kind:file size:small at:standard:root enc:caseCollision",
             "remote metadataUpdate item:dataless kind:file size:small at:standard:root enc:nfc",
             "remote metadataUpdate item:dataless kind:file size:small at:standard:root enc:nfd",
             "remote metadataUpdate item:dataless kind:file size:small at:standard:subdirectory",
             "remote metadataUpdate item:dataless kind:folderEmpty at:standard:root",
+            "remote metadataUpdate item:dataless kind:folderEmpty at:standard:root enc:caseCollision",
             "remote metadataUpdate item:dataless kind:folderEmpty at:standard:root enc:nfc",
             "remote metadataUpdate item:dataless kind:folderEmpty at:standard:root enc:nfd",
             "remote metadataUpdate item:dataless kind:folderEmpty at:standard:subdirectory",
             "remote metadataUpdate item:dataless kind:folderWithChildren at:standard:root",
+            "remote metadataUpdate item:dataless kind:folderWithChildren at:standard:root enc:caseCollision",
             "remote metadataUpdate item:dataless kind:folderWithChildren at:standard:root enc:nfc",
             "remote metadataUpdate item:dataless kind:folderWithChildren at:standard:root enc:nfd",
             "remote metadataUpdate item:dataless kind:folderWithChildren at:standard:subdirectory",
@@ -66,7 +70,7 @@ struct ScenarioSelectionTests {
         let all = Generator.scenarios(for: Quadrant(origin: .remote, operation: .metadataUpdate), phase: .a)
 
         #expect(all.count == 38)
-        #expect(all.count - RemoteMetadataUpdateTests.cells.count == 10, """
+        #expect(all.count - RemoteMetadataUpdateTests.cells.count == 6, """
         Twenty-six cells of this quadrant are not run. They are blocked on primitives this harness does not have — a package fixture, an observation which separates an evicted item from a placeholder, a recursive materialization walk, a reader for the local-name bounce attribute — and not on anything about the client.
         """)
     }
@@ -137,7 +141,7 @@ struct ScenarioSelectionTests {
         let buildable = all.filter(ScenarioSelection.isBuildable)
 
         #expect(all.count == 406)
-        #expect(buildable.count == 316, """
+        #expect(buildable.count == 328, """
         The harness can build \(buildable.count) of the \(all.count) cells of phase A. A change to this number is either a primitive gained or coverage lost, and both are worth a deliberate edit here.
         """)
     }
@@ -153,9 +157,9 @@ struct ScenarioSelectionTests {
         ("LocalDelete", LocalDeleteTests.cells, Quadrant(origin: .local, operation: .delete), 52, 40),
         ("LocalMetadataUpdate", LocalMetadataUpdateTests.cells, Quadrant(origin: .local, operation: .metadataUpdate), 26, 20),
         ("LocalMove", LocalMoveTests.cells, Quadrant(origin: .local, operation: .move), 24, 18),
-        ("RemoteMove", RemoteMoveTests.cells, Quadrant(origin: .remote, operation: .move), 36, 26),
+        ("RemoteMove", RemoteMoveTests.cells, Quadrant(origin: .remote, operation: .move), 36, 30),
         ("LocalCreate", LocalCreateTests.cells, Quadrant(origin: .local, operation: .create), 24, 19),
-        ("RemoteCreate", RemoteCreateTests.cells, Quadrant(origin: .remote, operation: .create), 36, 27),
+        ("RemoteCreate", RemoteCreateTests.cells, Quadrant(origin: .remote, operation: .create), 36, 31),
         ("LocalContentUpdate", LocalContentUpdateTests.cells, Quadrant(origin: .local, operation: .contentUpdate), 8, 8),
         ("RemoteContentUpdate", RemoteContentUpdateTests.cells, Quadrant(origin: .remote, operation: .contentUpdate), 24, 22),
         ("ConcurrentDelete", ConcurrentDeleteTests.cells, Quadrant(origin: .concurrent, operation: .delete), 52, 40),

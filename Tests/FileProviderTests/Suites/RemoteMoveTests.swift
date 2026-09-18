@@ -85,7 +85,7 @@ struct RemoteMoveTests {
                 #expect(try await room.remoteFingerprint(of: destinationRemote) == fingerprint, "The content of the item changed during a move, which alters only where it is.")
             }
 
-            ScenarioOracle.decline("noDuplicatesOrOrphans", because: ScenarioOracle.posixListingReason)
+            ScenarioOracle.judgeDuplicates(for: cell, named: name, under: subject.destinationLocalPath ?? subject.parentLocalPath, in: room)
             ScenarioOracle.decline("contentPolicyInheritance", because: ScenarioOracle.unpinnedReason)
             ScenarioOracle.decline("realizationState", because: ScenarioOracle.movedItemReason)
         }

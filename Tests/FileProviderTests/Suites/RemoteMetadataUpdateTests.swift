@@ -62,7 +62,7 @@ struct RemoteMetadataUpdateTests {
             try await ScenarioOracle.checkContentMatch(of: subject, renamedTo: after, in: room)
 
             // Said once for the run rather than once per case: the reason is the same every time, and a generated suite runs this body a dozen times or more.
-            ScenarioOracle.decline("noDuplicatesOrOrphans", because: ScenarioOracle.posixListingReason)
+            ScenarioOracle.judgeDuplicates(for: cell, named: after, under: subject.parentLocalPath, in: room)
             ScenarioOracle.decline("contentPolicyInheritance", because: ScenarioOracle.unpinnedReason)
         }
     }

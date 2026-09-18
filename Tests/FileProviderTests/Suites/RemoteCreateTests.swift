@@ -90,7 +90,7 @@ struct RemoteCreateTests {
                     break
             }
 
-            ScenarioOracle.decline("noDuplicatesOrOrphans", because: ScenarioOracle.posixListingReason)
+            ScenarioOracle.judgeDuplicates(for: cell, named: name, under: site.parentLocalPath, in: room)
             ScenarioOracle.decline("contentPolicyInheritance", because: ScenarioOracle.unpinnedReason)
             ScenarioOracle.decline("realizationState", because: ScenarioOracle.createdItemReason)
         }

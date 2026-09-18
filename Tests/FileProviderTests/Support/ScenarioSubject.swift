@@ -16,6 +16,13 @@ struct ScenarioSubject {
     let name: String
 
     ///
+    /// The name the client shows the item under, which is not always the one it was given.
+    ///
+    /// A name which differs from a sibling's only by case cannot be written beside it on a case-insensitive volume, so the system renames the arriving item — a bounce, recorded in ``ClientHarness/ExtendedAttribute/beforeBounce``. Every path this harness computes locally is derived from a name, and for those cells the name the server holds is not the name on disk. Defaults to ``name``, which is what it is for every other cell.
+    ///
+    let localName: String
+
+    ///
     /// The container it sits in, as the server spells it.
     ///
     let parentRemotePath: String
@@ -108,6 +115,9 @@ struct ScenarioSubject {
     /// - Returns: The path relative to the domain.
     ///
     func localPath(of other: String) -> String {
-        parentLocalPath.isEmpty ? other : "\(parentLocalPath)/\(other)"
+        // Asking for the item by the name it was given answers with the name it actually has. A suite should not have to know whether the cell it is running is one whose item was renamed on arrival, and the alternative — every call site choosing between two names — is the shape of mistake this type exists to prevent.
+        let resolved = other == name ? localName : other
+
+        return parentLocalPath.isEmpty ? resolved : "\(parentLocalPath)/\(resolved)"
     }
 }

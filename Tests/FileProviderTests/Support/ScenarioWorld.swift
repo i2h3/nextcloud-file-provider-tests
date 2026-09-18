@@ -209,6 +209,17 @@ enum ScenarioWorld {
             }
         }
 
+        if scenario.encoding == .caseCollision {
+            // The axis describes an item whose name differs from an existing one only by case, so the existing one has to exist first. It is created on the server, where both names can be held at once; what the client does when it cannot hold both is the thing under test.
+            try await ScenarioWorldError.doing("creating the sibling \"\(name)\" is meant to collide with") {
+                try await ServerWorkspace.withFixture(named: siblingName(of: name), size: smallFileSize, seed: 74) { source, _ in
+                    try await room.server.upload(source, to: parentRemotePath, force: true)
+                }
+
+                _ = try await room.waitForRemoteEntry(named: siblingName(of: name), in: parentRemotePath)
+            }
+        }
+
         try await ScenarioWorldError.doing("creating the \(scenario.item.kind.rawValue) \"\(name)\" on the server under \"\(parentRemotePath)\"") {
             try await createItem(scenario, named: name, at: parentRemotePath, in: room)
         }
@@ -228,7 +239,8 @@ enum ScenarioWorld {
             guard mustNotEnterParent else {
                 // Polling the parent, one level, never the item. A listing is `readdir` plus one `lstat` per entry, so it neither opens nor reads anything.
                 try await Waiter.waitUntilBlocking("\"\(name)\" reaches the client", timeout: LiveEnvironment.scaled(.seconds(180))) {
-                    try room.localChildren(of: parentLocalPath).contains { $0.name == name }
+                    // Asked for by whatever the client decided to call it, because a cell which arranged a name collision does not get the name it asked for and waiting for that one would wait forever.
+                    (try? resolveLocalName(of: name, for: scenario, under: parentLocalPath, in: room)) != nil
                 }
 
                 return
@@ -285,8 +297,13 @@ enum ScenarioWorld {
             }
         }
 
+        let localName = try await ScenarioWorldError.doing("finding the name the client gave \"\(name)\"") {
+            try resolveLocalName(of: name, for: scenario, under: parentLocalPath, in: room)
+        }
+
         return ScenarioSubject(
             name: name,
+            localName: localName,
             parentRemotePath: parentRemotePath,
             parentLocalPath: parentLocalPath,
             before: before,
@@ -341,6 +358,75 @@ enum ScenarioWorld {
         }
 
         return ScenarioCreationSite(parentRemotePath: remote, parentLocalPath: local, wasEntered: level != .dataless)
+    }
+
+    ///
+    /// The name of the sibling a colliding cell needs to collide with.
+    ///
+    /// The same name in a different case, which is what "differs only by case" means, and what a case-insensitive volume cannot hold twice.
+    ///
+    /// - Parameters:
+    ///     - name: The item's name.
+    ///
+    /// - Returns: The sibling's name.
+    ///
+    static func siblingName(of name: String) -> String {
+        name.lowercased()
+    }
+
+    ///
+    /// Find the name the client actually gave an item.
+    ///
+    /// The same as the name it was given, except where the cell arranged a collision: there the system renames the arriving item and records what it renamed it from. Both routes are tried, because the attribute is evidence about a bounce which has happened and says nothing when one has not.
+    ///
+    /// - Parameters:
+    ///     - name: The name the item was given.
+    ///     - scenario: The cell, whose encoding says whether a bounce was arranged.
+    ///     - parentLocalPath: The container, relative to the domain.
+    ///     - room: The room.
+    ///
+    /// - Returns: The name on disk.
+    ///
+    /// - Throws: ``ScenarioWorldError`` if the cell arranged a collision and no item can be found which answers to it.
+    ///
+    static func resolveLocalName(of name: String, for scenario: Scenario, under parentLocalPath: String, in room: CleanRoom) throws -> String {
+        // Listing is safe here and only here: this is the path taken when the cell permits its container to be entered, and the other path — for a container which must stay unentered — looks the item up instead and never arrives here.
+        let listing = try room.localChildren(of: parentLocalPath)
+
+        guard scenario.encoding == .caseCollision else {
+            // The item still has to be there. Returning the requested name without looking was a wait which always succeeded, so every quadrant which builds an item moved on before the item existed and then failed on its absence, one cell at a time.
+            guard listing.contains(where: { $0.name == name }) else {
+                throw ScenarioWorldError.unsupported("""
+                an item named "\(name)": the container holds \(listing.map(\.name).sorted().joined(separator: ", "))
+                """)
+            }
+
+            return name
+        }
+
+        let sibling = siblingName(of: name)
+
+        let entries = listing
+
+        if let bounced = entries.first(where: { entry in
+            ExtendedAttribute.string(of: ExtendedAttribute.beforeBounce, at: room.localURL(of: parentLocalPath.isEmpty ? entry.name : "\(parentLocalPath)/\(entry.name)")) == name
+        }) {
+            // Recorded rather than asserted, and recorded precisely because both outcomes are legal. Which one a volume produces is a property of the volume, so a cell demanding either would fail on a machine formatted differently — and a cell which quietly accepted both would pass without saying what it saw, which is how an axis stops measuring anything.
+            ScenarioOracle.observe("\"\(name)\" was bounced to \"\(bounced.name)\" because \"\(sibling)\" already held the name")
+
+            return bounced.name
+        }
+
+        // No bounce: the system held both names after all, which is a legitimate outcome on a case-sensitive volume and worth not mistaking for a failure to arrive.
+        guard entries.contains(where: { $0.name == name }) else {
+            throw ScenarioWorldError.unsupported("""
+            an item which answers to "\(name)": the container holds \(entries.map(\.name).sorted().joined(separator: ", ")), none of which is that name and none of which records having been renamed from it. Its sibling "\(sibling)" is what it was meant to collide with
+            """)
+        }
+
+        ScenarioOracle.observe("\"\(name)\" and \"\(sibling)\" are both held, so this volume distinguishes them by case and no bounce was needed")
+
+        return name
     }
 
     ///
