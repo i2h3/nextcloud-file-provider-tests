@@ -61,4 +61,33 @@ struct ClientSynchronisationTests {
     func `Unblocking a machine which is not blocked is not an error.`() async throws {
         try await ClientSynchronisation.unblock()
     }
+
+    ///
+    /// The two ways macOS says a default is not set.
+    ///
+    /// Pinned because they are its wording, not ours, and everything downstream turns on telling them apart from a refusal. `unblock()` confirms its own work by reading the switch back; if a release reworded these, every machine would start reading as unreadable and every room would throw before running a test. The opposite mistake is the one this replaced — a read which could not happen counting as the switch being absent, so unblocking confirmed itself by failing to look.
+    ///
+    @Test
+    func `Both of the ways defaults reports an absent value are read as absent.`() {
+        #expect(ExtensionDefaults.isAbsence("The domain/default pair of (com.example.app, someKey) does not exist"))
+        #expect(ExtensionDefaults.isAbsence("Error: Domain 'com.nextcloud.desktopclient.FileProviderExt' not found."))
+    }
+
+    ///
+    /// Anything else is a failure to look, and must not be mistaken for a value which is not there.
+    ///
+    @Test
+    func `A refusal is not read as an absent value.`() {
+        #expect(!ExtensionDefaults.isAbsence("Operation not permitted"))
+        #expect(!ExtensionDefaults.isAbsence(""))
+        #expect(!ExtensionDefaults.isAbsence("kCFPreferencesAnyApplication: permission denied"))
+    }
+
+    ///
+    /// On a machine where the extension has never run the domain is simply absent, which is not a problem and must not be reported as one.
+    ///
+    @Test
+    func `A machine with no extension domain reads the switch as off rather than unreadable.`() async {
+        #expect(await ExtensionDefaults.state(of: ClientSynchronisation.key) != .unreadable)
+    }
 }

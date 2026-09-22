@@ -36,13 +36,13 @@ enum ExtensionDefaults {
     /// - Parameters:
     ///     - key: The switch to remove.
     ///
-    /// - Returns: `true` if the switch is gone afterwards.
+    /// - Returns: What reading the switch back found. Only ``ExtensionDefaultState/off`` means it is gone; ``ExtensionDefaultState/unreadable`` means the removal could not be confirmed, which used to be reported as success.
     ///
     @discardableResult
-    static func clear(_ key: String) async -> Bool {
+    static func clear(_ key: String) async -> ExtensionDefaultState {
         _ = try? await ProcessRunner.run(executable, arguments: ["delete", ClientPaths.fileProviderExtensionBundleIdentifier, key])
 
-        return await !isEnabled(key)
+        return await state(of: key)
     }
 
     ///
@@ -51,13 +51,47 @@ enum ExtensionDefaults {
     /// - Parameters:
     ///     - key: The switch to read.
     ///
-    /// - Returns: `true` only if the value is present and reads as true. Defaults which cannot be read at all count as off, because the alternative is a harness which fails on every machine where the client has never run.
+    /// - Returns: `true` only if the value is present and reads as true. Defaults which cannot be read at all count as off, because the alternative is a harness which fails on every machine where the client has never run. A caller which needs to know the difference asks ``state(of:)``.
     ///
     static func isEnabled(_ key: String) async -> Bool {
-        guard let result = try? await ProcessRunner.run(executable, arguments: ["read", ClientPaths.fileProviderExtensionBundleIdentifier, key]), result.isSuccess else {
-            return false
+        await state(of: key) == .on
+    }
+
+    ///
+    /// Read a switch, saying so when it cannot be read.
+    ///
+    /// `defaults read` fails both for a switch which is not set and for a domain it is not allowed to open, and those two have to be told apart: one is the ordinary state of a machine where the client has never run, and the other is a machine whose answers cannot be trusted. Only the first should let ``clear(_:)`` report success.
+    ///
+    /// They are told apart by what `defaults` complains about, and it has two ways of saying "not set" depending on how much is missing. With the domain present and the key absent it writes `The domain/default pair of (…, …) does not exist`; with the domain itself absent — the ordinary case on a machine where the extension has never run — it writes `Domain '…' not found.`. Both mean not set. Any other failure is a failure to look.
+    ///
+    /// Both strings are pinned by tests, because they are macOS's wording rather than ours and a release which changes them would otherwise turn every machine into an unreadable one, quietly and everywhere at once.
+    ///
+    /// - Parameters:
+    ///     - key: The switch to read.
+    ///
+    /// - Returns: The state.
+    ///
+    static func state(of key: String) async -> ExtensionDefaultState {
+        guard let result = try? await ProcessRunner.run(executable, arguments: ["read", ClientPaths.fileProviderExtensionBundleIdentifier, key]) else {
+            return .unreadable
         }
 
-        return result.standardOutput.trimmingCharacters(in: .whitespacesAndNewlines) == "1"
+        guard result.isSuccess else {
+            return isAbsence(result.standardError) ? .off : .unreadable
+        }
+
+        return result.standardOutput.trimmingCharacters(in: .whitespacesAndNewlines) == "1" ? .on : .off
+    }
+
+    ///
+    /// Whether what `defaults` complained about was a value which is not there.
+    ///
+    /// - Parameters:
+    ///     - message: What it wrote to standard error.
+    ///
+    /// - Returns: `true` if the complaint is an absence rather than a refusal.
+    ///
+    static func isAbsence(_ message: String) -> Bool {
+        message.contains("does not exist") || message.contains("not found")
     }
 }

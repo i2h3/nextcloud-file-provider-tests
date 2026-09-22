@@ -284,18 +284,26 @@ enum ScenarioOracle {
         }
 
         switch expected {
-            case .dataless:
+            case .dataless, .evicted:
+                // Evicted is judged here and used to fall through the default into nothing. An evicted file is dataless — the content was fetched and then dropped — so the claim holds for it and holds harder: the user asked for that space back, and a rename which fetches takes it away again over a change they did not make. The clause it could not carry is declined below rather than standing in for the one it can.
                 #expect(node.isDataless, """
                 Renaming the file on the server caused the client to fetch its content. A change of name is metadata, and materializing an item nobody asked for spends the user's bandwidth and disk on a rename.
                 """)
+
+                if expected == .evicted {
+                    decline("realizationState", because: evictedItemReason)
+                }
 
             case .materialized:
                 #expect(!node.isDataless, """
                 Renaming the file on the server caused the client to drop content it already had, so a rename costs the user the download again.
                 """)
 
-            default:
-                break
+            case .materializedDeep, .unknown:
+                // Said rather than skipped. A `default: break` here left the reader unable to tell a level this oracle chose not to judge from one it had forgotten, which is the difference between a stated limit and a hole — and `evictedItemReason` sat in this file, written for a case that reached `break`.
+                decline("realizationState", because: """
+                a file at \(expected.rawValue), which is not a state a plain file can be in: deep materialization describes a folder's children and `unknown` describes a container nothing has enumerated. Nothing is asserted about how much of it is on disk
+                """)
         }
     }
 

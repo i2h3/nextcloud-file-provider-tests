@@ -262,7 +262,19 @@ struct CleanRoom {
             Self.isOccupied.withLock { $0 = false }
         }
 
-        try await DesktopClient.quit()
+        // Quitting first, because the client flushes its log on the way out and a log copied from a running client is missing the end of the story — which is the part worth having.
+        //
+        // But not fatally first, which it was. An unguarded `try` here meant that a client which survived both `--quit` and `pkill` took every following line down with it: no logs copied, no manifest closed, no configuration removed, no user deleted. The logs are the case that matters. They live inside the configuration directory, and the next room removes that directory on its way in, so a teardown which stopped here left the room's own directory holding a manifest and nothing else — while the report shows the cell failing with the body's error and nobody can tell a client which refused an upload from a client which had wedged. That state has been on disk before: fourteen directories holding a manifest and nothing else.
+        //
+        // Recorded rather than thrown, so that the body's failure stays the run's answer and this one is still visible beside it.
+        do {
+            try await DesktopClient.quit()
+        } catch {
+            Issue.record("""
+            The client did not quit while tearing this room down: \(error). Its log is copied anyway and may be missing whatever it had not yet flushed, and the next room starts by quitting it again.
+            """)
+        }
+
         try? await ClientSynchronisation.unblock()
         try? await copyClientLogs()
         try? completeManifest()
@@ -270,6 +282,7 @@ struct CleanRoom {
         // The configuration goes, so that nothing claims this room's domain any more. The domain directory itself stays until a client starts and reaps it, which the next clean room does on the way in — see ``ClientReset/reapDomainsWithoutAccounts(timeout:)``.
         try? FileManager.default.removeItem(at: ClientPaths.configurationDirectory)
 
+        // Last, and still allowed to throw: a user left on the server is a real leak and the run should say so. Everything which preserves evidence has already run by this point, which is the whole reason this line is last rather than first.
         try await user.delete(on: underTest)
     }
 

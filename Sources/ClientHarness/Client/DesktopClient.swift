@@ -123,10 +123,16 @@ public enum DesktopClient {
         } catch {
             try await ProcessRunner.run(URL(filePath: "/usr/bin/pkill"), arguments: ["-x", "Nextcloud"])
 
-            try await Waiter.waitUntil("the signalled client has terminated", timeout: .seconds(10)) {
+            // Both, as in the wait above. This one asked only about the client, and `pkill -x Nextcloud` does not touch the extension — it runs as its own process under the system's management. So the path taken when the graceful wait times out could return success with the extension still alive, serving the domain of the room being torn down, while the next room wiped the configuration out from under it and started a client beside it.
+            //
+            // The graceful wait times out on the extension alone more readily than it sounds: the system reaps an extension some time after the client that hosted it, so a client which is already gone and an extension which is not is an ordinary moment rather than a strange one — and `pkill` is then a no-op which does nothing to the only process still running.
+            //
+            // Throwing here is what this method documents: "WaitTimeoutError if the processes are still there after being signalled". It stops being fatal to a room's teardown, which used to skip the log copying behind it and is now recorded instead.
+            try await Waiter.waitUntil("the signalled client and its File Provider extension have terminated", timeout: .seconds(10)) {
                 let isClientRunning = try await isRunning()
+                let isProviderRunning = try await isExtensionRunning()
 
-                return !isClientRunning
+                return !isClientRunning && !isProviderRunning
             }
         }
     }

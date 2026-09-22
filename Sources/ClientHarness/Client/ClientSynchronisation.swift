@@ -34,11 +34,19 @@ public enum ClientSynchronisation {
     ///
     /// Unblocking runs on every way out of a scope, including those which never blocked anything, so the outcome is checked rather than the exit status — see ``ExtensionDefaults/clear(_:)``.
     ///
-    /// - Throws: ``ClientSynchronisationError/notUnblocked`` if the client is still blocked afterwards.
+    /// - Throws: ``ClientSynchronisationError/notUnblocked`` if the client is still blocked afterwards, or ``ClientSynchronisationError/blockStateUnreadable`` if that could not be determined.
     ///
     public static func unblock() async throws {
-        guard await ExtensionDefaults.clear(key) else {
-            throw ClientSynchronisationError.notUnblocked
+        switch await ExtensionDefaults.clear(key) {
+            case .off:
+                return
+
+            case .on:
+                throw ClientSynchronisationError.notUnblocked
+
+            case .unreadable:
+                // The state that used to be success. Reading the switch back is the whole of this method's confirmation, and a read which could not happen confirmed nothing while returning `false` for "is it on" — so a machine whose defaults are unreadable left every room believing it had unblocked a client it had not.
+                throw ClientSynchronisationError.blockStateUnreadable
         }
     }
 
