@@ -171,6 +171,13 @@ struct CleanRoom {
             // A room always starts synchronising. A test which blocks the client and then fails before unblocking it would otherwise hand the next test a client which never talks to its server, and that failure looks like a timeout rather than like anything to do with blocking.
             try await ClientSynchronisation.unblock()
 
+            // And a room always starts with a server which keeps what is deleted, for the same reason one line up: the harness turns this off and only the cells which asked for it off ever turn it back on.
+            //
+            // `files_trashbin` is an application, and disabling it is per installation — not per user, not per room. A `trash:without` cell leaves the container that way for the rest of the process, and the next test to read the trash without declaring a trash axis inherits it. Two do: `ClientToServer` asserts that deleting in the client fills the trash, and `ServerProvisioning` asserts that a deleted file can be restored. Both would fail, both would read as findings about the client or about provisioning, and the cause would be a setting this harness changed and forgot. That is the trash-bin mistake which cost twelve wrong bug reports, arriving from the other direction.
+            //
+            // Enabled unconditionally rather than restored from a remembered state, because remembering is the drift: `occ app:enable` on an enabled application is a no-op, and a cell which wants it off says so through ``ScenarioWorld/confirmTrash(_:in:)``, which reconciles from whatever it finds.
+            try await TrashApplication.setEnabled(true, inContainer: underTest.containerIdentifier)
+
             // Turned on before the client is started, so that the extension has it from its first breath. Its log is the only account of what the File Provider was asked to do and what it answered, and the failures worth having it for are the ones nobody thought to enable it for in advance.
             try await ClientLogging.enableDebugLogging()
 
@@ -452,9 +459,25 @@ struct CleanRoom {
     @discardableResult
     func waitForRemoteEntry(named name: String, in path: String = "/", timeout: Duration = LiveEnvironment.scaled(.seconds(60))) async throws -> RemoteEntry {
         var found: RemoteEntry?
+        let refused = Mutex<String?>(nil)
 
-        try await Waiter.poll("the server reports \"\(name)\" in \(path)", timeout: timeout) {
-            found = try await remoteChildren(of: path).first { $0.name == name }
+        try await Waiter.poll(
+            "the server reports \"\(name)\" in \(path)",
+            timeout: timeout,
+            diagnosis: { refused.withLock { $0 }.map { "the last listing of \(path) refused: \($0)" } ?? "\(path) listing without it" }
+        ) {
+            // A listing which raises is "not yet", not "no". The `try` used to be bare, so one transient WebDAV answer mid-run — a decode of a property the server had not finished writing, which this suite has already seen as "Failed to get size" — left the poll and became the verdict of whatever cell was building at the time. A wait whose first bad answer ends it is not a wait, and the error it ends with describes the server's moment rather than the client's behaviour.
+            //
+            // Swallowed to keep polling, and remembered so that the timeout can still say what kept happening.
+            do {
+                found = try await remoteChildren(of: path).first { $0.name == name }
+            } catch {
+                refused.withLock { $0 = "\(error)" }
+
+                return false
+            }
+
+            refused.withLock { $0 = nil }
 
             return found != nil
         }
@@ -477,8 +500,25 @@ struct CleanRoom {
     /// - Throws: ``WaitTimeoutError`` if it is still there afterwards.
     ///
     func waitForRemoteRemoval(of name: String, in path: String = "/", timeout: Duration = LiveEnvironment.scaled(.seconds(60))) async throws {
-        try await Waiter.poll("the server no longer reports \"\(name)\" in \(path)", timeout: timeout) {
-            try await !remoteChildren(of: path).contains { $0.name == name }
+        let refused = Mutex<String?>(nil)
+
+        try await Waiter.poll(
+            "the server no longer reports \"\(name)\" in \(path)",
+            timeout: timeout,
+            diagnosis: { refused.withLock { $0 }.map { "the last listing of \(path) refused: \($0)" } ?? "\(path) still holding it" }
+        ) {
+            // As above: a listing which raises is "not yet". Here the bare `try` was worse than in its sibling, because this wait is for a *disappearance* — the answer it is looking for and the answer it cannot get are both an absence, and the one which raised used to win.
+            do {
+                let holds = try await remoteChildren(of: path).contains { $0.name == name }
+
+                refused.withLock { $0 = nil }
+
+                return !holds
+            } catch {
+                refused.withLock { $0 = "\(error)" }
+
+                return false
+            }
         }
     }
 

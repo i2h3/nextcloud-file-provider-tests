@@ -229,13 +229,14 @@ enum ScenarioWorld {
             try await room.waitForRemoteEntry(named: name, in: parentRemotePath)
         }
 
-        let localPath = parentLocalPath.isEmpty ? name : "\(parentLocalPath)/\(name)"
-        let url = room.localURL(of: localPath)
+        // Where the item was asked to be. Not necessarily where it is: a cell which arranges a name collision gets whatever name the system chose, and on a volume which cannot hold both this is not it.
+        let requestedPath = parentLocalPath.isEmpty ? name : "\(parentLocalPath)/\(name)"
+        let requestedURL = room.localURL(of: requestedPath)
 
         // How the item is awaited depends on what the cell says about its container, and getting this wrong would not fail — it would quietly establish the opposite precondition and pass.
         let mustNotEnterParent = scenario.realization.levels.first == .dataless && scenario.realization.isAboutParents
 
-        try await ScenarioWorldError.doing("waiting for \"\(localPath)\" to reach the client") {
+        try await ScenarioWorldError.doing("waiting for \"\(requestedPath)\" to reach the client") {
             guard mustNotEnterParent else {
                 // Polling the parent, one level, never the item. A listing is `readdir` plus one `lstat` per entry, so it neither opens nor reads anything.
                 try await Waiter.waitUntilBlocking(
@@ -255,12 +256,12 @@ enum ScenarioWorld {
             //
             // This rests on an assumption nobody has measured: that a name lookup inside a container which was never enumerated does not drive that container's enumerator. If it is wrong, the lookup either never succeeds — and this wait times out, saying so — or it succeeds by enumerating, in which case the cell silently measures the materialized case instead. The first is loud and the second is why the ledger is asserted immediately afterwards.
             try await Waiter.waitUntilBlocking(
-                "\"\(localPath)\" can be looked up without entering its container",
+                "\"\(requestedPath)\" can be looked up without entering its container",
                 timeout: LiveEnvironment.scaled(.seconds(180)),
                 // Deliberately not a listing. Everywhere else the diagnosis lists the container to say what was there instead, and here that listing is the exact thing the cell forbids — a timeout is not a reason to perform the enumeration the cell was built to avoid, because the next thing anyone reads is the diagnosis and it would be describing a container this line had just changed.
                 diagnosis: { "nothing at that path, and its container was left unlisted because entering it is what this cell forbids" }
             ) {
-                try LocalNode.at(url) != nil
+                try LocalNode.at(requestedURL) != nil
             }
 
             guard !room.ledger.hasEnumerated(room.localURL(of: parentLocalPath)) else {
@@ -269,6 +270,24 @@ enum ScenarioWorld {
                 """)
             }
         }
+
+        // Resolved here, before anything touches the item, because everything after this reads it by path.
+        //
+        // The path used to be built from the requested name and kept, and the resolved name was worked out at the very end for the subject alone. So on a volume which bounces a colliding name, `realize` and `verify` both looked where the item had been asked to go rather than where it went, and the first thing to notice was `#require(LocalNode.at(url))` failing with "The item did not reach the client, so the cell's precondition was never established." That sentence goes into the artifact a person triages from, and it is false: the item did reach the client, the wait a few lines above proved it, and `resolveLocalName` had already recorded through which name. The harness held the truth and filed the opposite.
+        //
+        // Not asked of a container which has to stay unentered, because asking lists it. That is the same mistake from the other side: `resolveLocalName` used to return the requested name without looking, which made the wait a no-op; it now lists, which would make this call the enumeration the cell forbids — asserted absent by the ledger check a dozen lines up and then performed. Nothing is lost by skipping it, because a bounce is a decision made while writing an arriving item into a container, and nothing has written into a container nothing has entered.
+        let localName: String
+
+        if mustNotEnterParent {
+            localName = name
+        } else {
+            localName = try await ScenarioWorldError.doing("finding the name the client gave \"\(name)\"") {
+                try resolveLocalName(of: name, for: scenario, under: parentLocalPath, in: room)
+            }
+        }
+
+        let localPath = parentLocalPath.isEmpty ? localName : "\(parentLocalPath)/\(localName)"
+        let url = room.localURL(of: localPath)
 
         let wasEnumerated: Bool
 
@@ -304,21 +323,6 @@ enum ScenarioWorld {
         } else if scenario.item.kind == .file {
             fingerprint = try await ScenarioWorldError.doing("reading back the content of \"\(remotePath)\"") {
                 try await room.remoteFingerprint(of: remotePath)
-            }
-        }
-
-        // Not asked of a container which has to stay unentered, because asking lists it.
-        //
-        // This is the same mistake twice in two days, from opposite directions. `resolveLocalName` used to return the requested name without looking, which made the wait above a no-op; it now lists the container, which makes *this* call the enumeration the cell forbids — asserted absent a dozen lines earlier by the ledger check, and then performed here, before the operation under test runs. Every `.parents` cell with a dataless container would have measured a materialized one while reporting itself as dataless, which is the quiet half of the failure and the reason the ledger is consulted at all.
-        //
-        // Nothing is lost by skipping it. A bounce is a decision the system makes while writing an arriving item into a container, and `resolveLocalName` exists to find out which name it chose. A container nothing has entered has had nothing written into it by the client, so the name is the one that was asked for.
-        let localName: String
-
-        if mustNotEnterParent {
-            localName = name
-        } else {
-            localName = try await ScenarioWorldError.doing("finding the name the client gave \"\(name)\"") {
-                try resolveLocalName(of: name, for: scenario, under: parentLocalPath, in: room)
             }
         }
 

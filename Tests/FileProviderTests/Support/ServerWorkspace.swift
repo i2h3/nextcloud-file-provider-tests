@@ -92,7 +92,17 @@ struct ServerWorkspace {
 
             return result
         } catch {
-            try? await NextcloudContainerManager.resume(underTest.containerIdentifier)
+            // The body's error is the one worth throwing, so resuming must not replace it — but it must not vanish either. A resume which fails leaves the container paused for the rest of the process, and every later test against that release then fails while provisioning its user, with a Docker error nothing connects back to here.
+            //
+            // Recorded rather than swallowed. It is the one line that turns "why did the second half of this run fall over" into an answer, and `try?` alone was leaving the run to be read as a client which had wedged.
+            do {
+                try await NextcloudContainerManager.resume(underTest.containerIdentifier)
+            } catch let resumeError {
+                Issue.record("""
+                The server was paused for this test and could not be resumed afterwards: \(resumeError). \
+                It stays paused, so every later test against \(underTest) will fail while talking to it, for this reason and not for one of their own.
+                """)
+            }
 
             throw error
         }
