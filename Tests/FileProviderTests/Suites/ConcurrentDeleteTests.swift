@@ -88,9 +88,7 @@ struct ConcurrentDeleteTests {
             // The invariant which holds across every way this race can resolve: a deletion both sides asked for must still be recoverable. How many copies reach the trash is not asserted — one side's deletion arriving after the other's has already been recorded is a legal way to end up with two, and a test which demanded one would be asserting an implementation detail.
             // With the trash disabled the API gives no contract for where a deleted item goes — the system decides, and the destination is explicitly not guaranteed. So where it went is recorded rather than asserted; what must hold either way is that it is gone from the domain, which is checked above.
             guard cell.trash == .with else {
-                let remains = (try? await room.server.trash()) ?? []
-
-                UnderdeterminedOutcome.observed(remains.contains { $0.name == name } ? "providerDefinedDestination" : "removedPermanently", for: .trashPlacement, in: cell)
+                await ScenarioOracle.judgeTrashPlacement(of: name, for: cell, in: room)
 
                 ScenarioOracle.decline("conflictResolution", because: ScenarioOracle.mutualDeletionReason)
                 ScenarioOracle.decline("noDuplicatesOrOrphans", because: ScenarioOracle.posixListingReason)

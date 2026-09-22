@@ -74,6 +74,11 @@ struct ClientToServerTests {
                 return leftovers.isEmpty
             }
 
+            // Read once more, outside the swallow, because the expectation below has to rest on a listing which happened.
+            //
+            // The `try?` is there so that a transient listing failure is a retry rather than a verdict, and it also swallowed the case where every listing failed — leaving `leftovers` at the empty value it was declared with and the expectation passing on an observation nobody made. This read throws instead, which is the honest answer when the server cannot be reached.
+            leftovers = try await room.remoteChildren().map(\.name).filter { $0 != name }
+
             #expect(leftovers.isEmpty, "The save left something behind on the server: \(leftovers.joined(separator: ", "))")
         }
     }

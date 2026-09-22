@@ -164,14 +164,27 @@ struct ConflictTests {
                 }
             }
 
-            try await Waiter.poll("the server settles", timeout: LiveEnvironment.scaled(.seconds(240))) {
+            // Settled when the two sides agree, which is what every permitted outcome ends in.
+            //
+            // It used to wait for the server to hold the *client's* version, or for a second file to appear. Those are two of the three permitted outcomes. The third — the server's version winning, with no copy kept — leaves one file holding exactly the bytes the server already held, so the condition was false before anything happened and stayed false: four minutes, then a thrown timeout, for the outcome this test exists to record. A wait which cannot be satisfied by a legal result is an assertion wearing a wait's clothing.
+            try await Waiter.poll(
+                "the two sides settle on the same content",
+                timeout: LiveEnvironment.scaled(.seconds(240)),
+                diagnosis: { "the server holding \((try? Data(contentsOf: file)).map { "\($0.count) bytes locally" } ?? "nothing readable locally")" }
+            ) {
                 let remote = try await room.remoteChildren()
 
                 guard remote.count == 1 else {
                     return true
                 }
 
-                return try await room.remoteFingerprint(of: "/\(name)") == localFingerprint
+                let stored = try await room.remoteFingerprint(of: "/\(name)")
+
+                guard let held = try? Data(contentsOf: file) else {
+                    return false
+                }
+
+                return ContentFactory.fingerprint(of: held) == stored
             }
 
             let remote = try await room.remoteChildren()
@@ -183,12 +196,20 @@ struct ConflictTests {
                 try await fingerprints.append(room.remoteFingerprint(of: "/\(entry.name)"))
             }
 
+            // Which of the three happened is the output of this test, and it was a `print`. Two runs a month apart cannot be compared on a line nobody kept, and a client which quietly stopped keeping conflict copies would look identical in the artifacts of both.
             if remote.count > 1 {
-                print("  note: the server kept both versions as a conflict copy: \(remote.map(\.name).sorted().joined(separator: ", ")).")
+                ScenarioOracle.observe("""
+                the server kept both versions as a conflict copy: \(remote.map(\.name).sorted().joined(separator: ", "))
+                """, in: room)
             } else if fingerprints.contains(localFingerprint) {
-                print("  note: the local version won and the remote edit was not kept separately.")
+                ScenarioOracle.observe("the local version won and the remote edit was not kept separately", in: room)
             } else if fingerprints.contains(remoteFingerprint) {
-                print("  note: the remote version won and the local edit was not kept separately.")
+                ScenarioOracle.observe("the remote version won and the local edit was not kept separately", in: room)
+            } else {
+                // Neither side's bytes and not a copy. Recorded rather than passed over: the file survived, which is all this test asserts, but what it holds is something no one wrote.
+                Issue.record("""
+                The file survived the conflict holding bytes neither side wrote. The client wrote one version and the server another, and "\(name)" now matches neither.
+                """)
             }
         }
     }

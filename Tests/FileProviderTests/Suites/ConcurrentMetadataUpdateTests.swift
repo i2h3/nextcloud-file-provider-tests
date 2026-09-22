@@ -119,7 +119,7 @@ struct ConcurrentMetadataUpdateTests {
                 case (false, false): return
             }
 
-            UnderdeterminedOutcome.observed(member, for: .conflictResolution, in: cell)
+            UnderdeterminedOutcome.observed(member, for: .conflictResolution, in: cell, room: room)
 
             // Common to every permitted result: whatever name it settled under, the item is the same item and its content did not change. A rename resolved by replacing the item is a legal-looking outcome which has thrown away the shares, comments and history the server kept.
             if member != "conflictCopy", let survivor = try await room.remoteChildren(of: subject.parentRemotePath).first(where: { settled.contains($0.name) }) {

@@ -4,6 +4,7 @@
 import ClientHarness
 import Foundation
 import ScenarioMatrix
+import ServerHarness
 import Synchronization
 import Testing
 
@@ -158,9 +159,42 @@ enum ScenarioOracle {
     }
 
     ///
-    /// Which clauses have already been reported in this run.
+    /// Record where a deleted item went, for a cell whose server keeps no trash.
     ///
-    /// A declined clause is a property of the suite rather than of a case: it is declined for the same reason every time, and a generated suite runs the same case body dozens of times. Printing it per case buries the run in two identical paragraphs per case — which is not merely noisy, it teaches a reader to skim exactly the part that says what is not covered.
+    /// With the trash disabled the API gives no contract for the destination — the system decides, and it is explicitly not guaranteed — so this records rather than asserts. What it must not do is turn a failed look into an answer.
+    ///
+    /// It did. The trash was read as `(try? await room.server.trash()) ?? []`, which makes "the trash could not be read" and "the item was not in the trash" the same empty array and records both as `removedPermanently`. On a server with the trash application disabled the endpoint may legitimately refuse, so the read failing is expected — which is exactly why the two had to be told apart rather than merged: the expected failure was covering for any other.
+    ///
+    /// Shared by the three delete quadrants, which each held their own copy of it.
+    ///
+    /// - Parameters:
+    ///     - name: The item which was deleted.
+    ///     - cell: The cell, which carries the contract.
+    ///     - room: The room.
+    ///
+    static func judgeTrashPlacement(of name: String, for cell: Scenario, in room: CleanRoom) async {
+        guard let remains = try? await room.server.trash() else {
+            observe("""
+            the trash could not be read after "\(name)" was deleted, so where it went was not observed. With the trash application disabled this may be the server refusing an endpoint it does not serve, which is why it is not recorded as the item having been removed permanently
+            """, in: room)
+
+            return
+        }
+
+        UnderdeterminedOutcome.observed(
+            remains.contains { $0.name == name } ? "providerDefinedDestination" : "removedPermanently",
+            for: .trashPlacement,
+            in: cell,
+            room: room
+        )
+    }
+
+    ///
+    /// Which clauses have already been reported in this run, and with which reason.
+    ///
+    /// A declined clause is usually a property of the suite rather than of a case: it is declined for the same reason every time, and a generated suite runs the same case body dozens of times. Printing it per case buries the run in two identical paragraphs per case — which is not merely noisy, it teaches a reader to skim exactly the part that says what is not covered.
+    ///
+    /// Keyed on the clause *and* the reason, because "usually" is not "always" and the key used to be the clause alone. A clause declined for one reason early in a run and for a different reason later — the second being the interesting one, and possibly a real failure wearing a decline's clothing — printed only the first. The premise that the reason never varies was written in this comment and enforced nowhere.
     ///
     private static let reported = Mutex<Set<String>>([])
 
@@ -174,7 +208,7 @@ enum ScenarioOracle {
     ///     - reason: Why it cannot be judged.
     ///
     static func decline(_ oracle: String, because reason: String) {
-        let isFirst = reported.withLock { $0.insert(oracle).inserted }
+        let isFirst = reported.withLock { $0.insert("\(oracle)\u{1F}\(reason)").inserted }
 
         guard isFirst else {
             return
@@ -294,16 +328,21 @@ enum ScenarioOracle {
     ///
     /// Judge that the bytes did not change.
     ///
-    /// Only for an item which was already materialized. Reading a placeholder to compare its content is how the oracle creates the state it is measuring: on a File Provider item, opening is fetching.
+    /// Two comparisons, and the second is the one the clause is named for. The first reads the server before and after and says the rename did not disturb what it stored. The second reads the client and says the two sides agree — which is the only half that can catch a rename which quietly replaced the item with something else on one side only.
+    ///
+    /// The second half is taken only where taking it changes nothing. Reading a placeholder to compare its content is how the oracle creates the state it is measuring: on a File Provider item, opening is fetching. So it is read when the cell says the item was already materialized, and declined out loud otherwise.
+    ///
+    /// It used to be the first comparison alone, which is the server against itself. That is worth asserting and it is not this clause: a client which renamed the item and silently emptied its own copy passed it.
     ///
     /// - Parameters:
     ///     - subject: What was renamed.
     ///     - name: The name it was renamed to.
+    ///     - cell: The cell, which says what the item is and how much of it was on disk.
     ///     - room: The room.
     ///
     /// - Throws: Whatever reading raises.
     ///
-    static func checkContentMatch(of subject: ScenarioSubject, renamedTo name: String, in room: CleanRoom) async throws {
+    static func checkContentMatch(of subject: ScenarioSubject, renamedTo name: String, for cell: Scenario, in room: CleanRoom) async throws {
         guard let fingerprint = subject.fingerprint else {
             return
         }
@@ -311,5 +350,27 @@ enum ScenarioOracle {
         let stored = try await room.remoteFingerprint(of: subject.remotePath(of: name))
 
         #expect(stored == fingerprint, "The content of the item changed during a rename, which alters only its name.")
+
+        guard case let .item(level) = cell.realization, level == .materialized, cell.item.kind == .file else {
+            decline("contentMatch", because: """
+            it compares the server with itself here. The client's copy is only read where reading it changes nothing, and this cell \(cell.item.kind == .file ? "asks for an item which is not materialized, so opening it to compare would fetch it" : "is not a plain file, whose bytes do not live at one path")
+            """)
+
+            return
+        }
+
+        let url = room.localURL(of: subject.localPath(of: name))
+
+        guard let data = try? Data(contentsOf: url) else {
+            Issue.record("""
+            The renamed item cannot be read in the client, although the cell had it materialized before the rename. A rename is metadata and must leave the bytes where they were.
+            """)
+
+            return
+        }
+
+        #expect(ContentFactory.fingerprint(of: data) == stored, """
+        The client and the server disagree about the contents of "\(name)" after a rename which alters only a name. The server holds what it held before; the client holds something else.
+        """)
     }
 }

@@ -14,7 +14,7 @@ import Testing
 /// 1. **Membership** — the observed result must be one of the permitted ones, which is what this asserts.
 /// 2. **Common invariants** — whatever holds across every permitted member is asserted separately, by the suite, as an ordinary expectation.
 /// 3. **Non-assertion** — no API here compares the observation with a chosen member. There is deliberately no way to write that, which is the whole reason this is a type rather than a convention.
-/// 4. **Recording** — the member which was observed is printed, so that a silent change of behaviour inside the permitted set is still visible in a run.
+/// 4. **Recording** — the member which was observed is recorded, so that a silent change of behaviour inside the permitted set is still visible in a run. Recorded, not printed: it was a `print` and nothing else, which made the obligation true of a terminal rather than of a run. Comparing two runs to see which permitted outcome the client picked — the entire reason the obligation exists — needed scrollback nobody keeps.
 ///
 /// The cell is asked for its own contract rather than being told one, so a clause which the model considers determined cannot be judged loosely here: that is reported as the misuse it is.
 ///
@@ -26,8 +26,9 @@ enum UnderdeterminedOutcome {
     ///     - member: What happened, named with the same word the model's permitted list uses.
     ///     - oracle: The clause being judged.
     ///     - scenario: The cell, which carries the contract this is judged against.
+    ///     - room: The room it was observed in, which is what ties the record to a cell in the artifacts.
     ///
-    static func observed(_ member: String, for oracle: Oracle, in scenario: Scenario) {
+    static func observed(_ member: String, for oracle: Oracle, in scenario: Scenario, room: CleanRoom) {
         guard let contract = scenario.expected.contract(for: oracle) else {
             Issue.record("""
             The cell \(scenario.description) does not carry the \(oracle.rawValue) clause at all, so there is no contract to judge "\(member)" against. Either the suite is judging a clause its quadrant does not have, or the model stopped emitting one it used to.
@@ -54,7 +55,9 @@ enum UnderdeterminedOutcome {
             return
         }
 
-        // The fourth obligation. Nothing fails here, and that is the point: a client which quietly changes which permitted outcome it picks is behaving legally and is still worth seeing, because the change is exactly what a reader of two runs would otherwise miss.
-        print("  observed: \(oracle.rawValue) settled on \"\(member)\", one of \(permitted.sorted().joined(separator: ", ")) — \(scenario.description)")
+        // The fourth obligation. Nothing fails here, and that is the point: a client which quietly changes which permitted outcome it picks is behaving legally and is still worth seeing, because the change is exactly what a reader of two runs would otherwise miss — which is only true if the run kept it.
+        ScenarioOracle.observe("""
+        \(oracle.rawValue) settled on "\(member)", one of \(permitted.sorted().joined(separator: ", "))
+        """, in: room)
     }
 }

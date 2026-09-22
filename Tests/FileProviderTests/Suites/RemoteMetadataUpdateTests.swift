@@ -59,7 +59,7 @@ struct RemoteMetadataUpdateTests {
             try await ScenarioOracle.checkConsistency(of: subject, renamedTo: after, in: room)
             ScenarioOracle.checkRealizationState(node, scenario: cell, expected: level)
             try await ScenarioOracle.checkIdentityStability(of: subject, renamedTo: after, in: room)
-            try await ScenarioOracle.checkContentMatch(of: subject, renamedTo: after, in: room)
+            try await ScenarioOracle.checkContentMatch(of: subject, renamedTo: after, for: cell, in: room)
 
             // Said once for the run rather than once per case: the reason is the same every time, and a generated suite runs this body a dozen times or more.
             ScenarioOracle.judgeDuplicates(for: cell, named: after, under: subject.parentLocalPath, in: room)

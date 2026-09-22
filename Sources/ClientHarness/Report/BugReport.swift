@@ -110,24 +110,45 @@ public struct BugReport: Sendable {
             return nil
         }
 
-        let failing = Set(occurrences.compactMap(\.caseDisplayName))
+        let all = servers.map(\.description)
+        let names = occurrences.compactMap(\.caseDisplayName)
 
-        guard !failing.isEmpty else {
+        guard !names.isEmpty else {
             return nil
         }
 
-        let all = servers.map(\.description)
+        let resolved = names.map { Self.server(named: $0, among: all) }
 
-        // Every name the run recorded has to be one of the servers, or the two lists are not describing the same run.
+        // Every name the run recorded has to resolve to one of the servers, or the two lists are not describing the same run.
         //
         // Without this, a mismatch — a renamed tag, a manifest from an older schema, a case name the library spelled differently — produces a comparison in which nothing failed and everything passed. The report then states that no server was affected, and withholds the caution about a failure which hit every server, because that caution is derived from the same empty set. Both sentences read as findings.
-        guard failing.isSubset(of: Set(all)) else {
+        guard resolved.allSatisfy({ $0 != nil }) else {
             return nil
         }
 
+        let failing = Set(resolved.compactMap(\.self))
         let passing = all.filter { !failing.contains($0) }
 
         return (failing: all.filter { failing.contains($0) }, passing: passing)
+    }
+
+    ///
+    /// Which server a case name names.
+    ///
+    /// A case display name used to *be* the server, because the tests took one argument. They take two now — the server and the cell — so the name reads `latest, remote metadataUpdate item:dataless kind:file …` and nothing in it equals a server's description any more. The check above compared the two for equality, found no overlap, and returned nothing: the differential has been absent from every report since the day cells became an argument, and the server row of each one has rendered empty. Two derivations of one fact, and only the producer moved.
+    ///
+    /// Matched longest first, so that `latest` cannot claim a case belonging to `latest+push`.
+    ///
+    /// - Parameters:
+    ///     - name: The case display name, as the testing library wrote it.
+    ///     - servers: The servers the run used, as ``RunManifestServer/description`` spells them.
+    ///
+    /// - Returns: The server, or `nil` if the name does not begin with one.
+    ///
+    static func server(named name: String, among servers: [String]) -> String? {
+        servers
+            .sorted { $0.count > $1.count }
+            .first { name == $0 || name.hasPrefix("\($0),") }
     }
 
     ///

@@ -295,4 +295,45 @@ struct BugReportTests {
         // Once, under "Expected behavior", where it is true. Never as the description of the defect.
         #expect(rendered.components(separatedBy: "A file created on the server appears in the client as a placeholder.").count - 1 == 1)
     }
+
+    ///
+    /// The server is read out of a case name which also carries the cell.
+    ///
+    /// Pinned because it has drifted once already and drifted silently: the name used to be the server alone, the comparison was an equality, and when the cells became a second argument the differential stopped being produced at all. Nothing failed — the reports simply stopped saying which server was affected.
+    ///
+    @Test
+    func `A case name which carries a cell still names its server.`() {
+        let servers = ["latest", "latest+push", "33"]
+
+        #expect(BugReport.server(named: "latest, remote metadataUpdate item:dataless kind:file size:small at:standard:root", among: servers) == "latest")
+        #expect(BugReport.server(named: "33, local delete item:materialized kind:folderEmpty at:standard:root trash:with", among: servers) == "33")
+    }
+
+    ///
+    /// Longest first, or the shorter tag swallows the longer one's cases and the differential names the wrong server.
+    ///
+    @Test
+    func `A server whose name begins with another server's is not mistaken for it.`() {
+        let servers = ["latest", "latest+push"]
+
+        #expect(BugReport.server(named: "latest+push, remote create parent:materialized kind:file size:small at:standard:root", among: servers) == "latest+push")
+        #expect(BugReport.server(named: "latest, remote create parent:materialized kind:file size:small at:standard:root", among: servers) == "latest")
+    }
+
+    ///
+    /// The shape the tests had before cells became an argument, which still has to work: a run of a suite taking one argument names its server and nothing else.
+    ///
+    @Test
+    func `A case name which is only a server still names it.`() {
+        #expect(BugReport.server(named: "latest", among: ["latest", "33"]) == "latest")
+    }
+
+    ///
+    /// A name belonging to no server resolves to none, which is what makes the differential withhold itself rather than report that nothing failed.
+    ///
+    @Test
+    func `A case name from a different run resolves to no server.`() {
+        #expect(BugReport.server(named: "35, remote delete item:dataless kind:file size:small at:standard:root trash:with", among: ["latest", "33"]) == nil)
+        #expect(BugReport.server(named: "latestish, something", among: ["latest"]) == nil)
+    }
 }

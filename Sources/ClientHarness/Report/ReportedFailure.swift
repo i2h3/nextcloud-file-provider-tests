@@ -22,7 +22,7 @@ public struct ReportedFailure: Sendable, Equatable {
     ///
     /// Which case of a parameterized test failed, named the way a person would name it.
     ///
-    /// For this suite that is the server: `latest`, or `33+push`. The xUnit report cannot say, which is the single largest reason the event stream is worth capturing.
+    /// For this suite that is the server and then the cell, separated by a comma: `latest, remote metadataUpdate item:dataless kind:file size:small at:standard:root`. It was the server alone while the tests took one argument, and anything reading it for a server has to say so rather than assume it — see ``BugReport/server(named:among:)``. The xUnit report cannot say either, which is the single largest reason the event stream is worth capturing.
     ///
     public let caseDisplayName: String?
 

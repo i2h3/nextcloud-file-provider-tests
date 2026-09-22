@@ -232,6 +232,9 @@ struct DeletionPropagationRateTests {
                     latencies.append(took)
                     reached += 1
                     note(trial, "reached \(underTest) after \(took)")
+
+                    // Recorded per trial, not only counted. Twenty samples of one cell is the distribution this suite exists to describe, and without them the run's page finds no measurement for the row and says so — on a cell which took ten minutes to take twenty measurements.
+                    MetricsRecorder.record("deletion propagation [\(arm.rawValue)]", duration: took, in: room, test: cell.description)
                 } catch {
                     // Not yet a loss, only an absence at ten seconds. Watching on is what separates a deletion which never arrives from one which is merely slow, and the two are different defects — the first is a permanent divergence the user cannot see, the second is a delay.
                     var arrived: Duration?
@@ -250,6 +253,9 @@ struct DeletionPropagationRateTests {
                         late += 1
                         lateLatencies.append(arrived)
                         note(trial, "reached \(underTest) LATE, after \(arrived)")
+
+                        // Under its own name, because late and on time are different defects and averaging them together describes neither.
+                        MetricsRecorder.record("deletion propagation, late [\(arm.rawValue)]", duration: arrived, in: room, test: cell.description)
 
                         continue
                     }
@@ -278,13 +284,23 @@ struct DeletionPropagationRateTests {
             let slowest = latencies.max().map { "\($0)" } ?? "—"
             let slowestLate = lateLatencies.max().map { "\($0)" } ?? "—"
 
+            let summary = """
+            \(reached) of \(counted) deletions reached \(underTest) within \(LiveEnvironment.scaled(Self.trialTimeout)) (\(String(format: "%.0f", percentage))%) \
+            in the \(arm.rawValue) arm. \(late) arrived late, the slowest after \(slowestLate); \
+            \(lost) never arrived within a further \(LiveEnvironment.scaled(Self.graceTimeout)). \
+            \(dropped) trial\(dropped == 1 ? "" : "s") dropped before measuring, slowest on-time success \(slowest). \
+            Rates hold within one room and one client session rather than across fresh ones
+            """
+
             print("""
               rate: \(cell.description)  [\(arm.rawValue)]
-                    \(reached) of \(counted) deletions reached \(underTest) within \(LiveEnvironment.scaled(Self.trialTimeout)) (\(String(format: "%.0f", percentage))%)
-                    \(late) arrived late, the slowest after \(slowestLate); \(lost) never arrived within a further \(LiveEnvironment.scaled(Self.graceTimeout))
-                    \(dropped) trial\(dropped == 1 ? "" : "s") dropped before measuring, slowest on-time success \(slowest)
-                    rates hold within one room and one client session rather than across fresh ones
+                    \(summary)
             """)
+
+            // The number this suite exists to produce, kept rather than printed.
+            //
+            // It asserts nothing on purpose — a characterisation suite which fails is one nobody runs twice — and that made the omission invisible: a cell which lost every one of its twenty deletions recorded no issue, left no sample, and appeared on the run's page as "no measurement", where the legend tells the reader in writing that nothing went wrong. The verdict is right and was never the problem. Comparing this run against the next one was, and it needed a number that outlives the terminal.
+            ScenarioOracle.observe(summary, in: room)
         }
     }
 }
