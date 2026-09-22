@@ -66,8 +66,10 @@ struct LocalMetadataUpdateTests {
             }
 
             // Renaming is metadata, so a placeholder must still be a placeholder afterwards. A client which downloads a file in order to change its name has spent a transfer on nothing.
+            //
+            // Against `!= .materialized` rather than `== .dataless`, which is what this said and which inverted the clause for every evicted cell. An evicted item is dataless — that is what eviction does, and the two states are indistinguishable to a test process, same flag and same zero blocks. Comparing against `.dataless` therefore demanded that an evicted file come back *materialized*: a client which renamed it without fetching failed, and a client which downloaded it in order to rename it passed. The one clause this quadrant exists for rewarded the defect it exists to catch.
             if cell.item.kind == .file, let node = try LocalNode.at(newURL) {
-                #expect(node.isDataless == (level == .dataless), """
+                #expect(node.isDataless == (level != .materialized), """
                 Renaming the file in the client changed how much of it is on disk: it was \(level.rawValue) and is now \(node.isDataless ? "a placeholder" : "materialized").
                 """)
             }

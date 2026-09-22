@@ -64,6 +64,10 @@ enum ScenarioSelection {
     ///
     /// Whether this harness can put an item into the state a cell asks for.
     ///
+    /// The kind a level is judged against is the kind of the thing that level describes, which is not always the item. ``Realization`` exists to make that distinction impossible to miss, and this function missed it: every level was judged against the item's kind, including the levels which describe a container.
+    ///
+    /// It was wrong in both directions at once. A container asked to be `materializedDeep` is a folder holding the item, so it can always be built — but the check asked whether the *item* was a folder with children, and dropped every such cell whose item was a file. A container asked to be `evicted` cannot be built at all, because a folder has no content to drop — but the check asked whether the *item* was a file, and admitted it whenever it was.
+    ///
     /// - Parameters:
     ///     - realization: What the cell asks for.
     ///     - kind: What sort of item it is.
@@ -71,18 +75,21 @@ enum ScenarioSelection {
     /// - Returns: `true` if the state can be established and confirmed.
     ///
     private static func isBuildable(_ realization: Realization, kind: ItemKind) -> Bool {
-        realization.levels.allSatisfy { level in
+        // A container level is a statement about a folder which holds the item, so it is judged as one.
+        let subject: ItemKind = realization.isAboutParents ? .folderWithChildren : kind
+
+        return realization.levels.allSatisfy { level in
             switch level {
                 case .dataless, .materialized:
                     true
 
                 case .evicted:
                     // Established by fetching and dropping the content. The two states remain indistinguishable to a test process — the same flag, size and zero blocks — so the cell runs and the distinction alone is declined, rather than the cell being dropped for a clause it cannot judge.
-                    kind == .file
+                    subject == .file
 
                 case .materializedDeep:
                     // One level down, child by child, which is the only way there is: asking the system to download a directory materializes its immediate children and stops. The model emits this level only where it differs from a shallow one.
-                    kind == .folderWithChildren
+                    subject == .folderWithChildren
 
                 case .unknown:
                     // Every container a cell can place sits under the domain root, which is enumerated once while the room is built. A subdirectory container is therefore dataless at the start of a test and never unknown.

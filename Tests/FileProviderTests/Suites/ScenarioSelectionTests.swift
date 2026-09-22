@@ -141,7 +141,8 @@ struct ScenarioSelectionTests {
         let buildable = all.filter(ScenarioSelection.isBuildable)
 
         #expect(all.count == 406)
-        #expect(buildable.count == 328, """
+        // 328 until a container's realization level stopped being judged against the item's kind. `materializedDeep` was asked of the item — so a cell whose container had to be deeply materialized was dropped whenever its item was a file, although the container is a folder with children and perfectly buildable. Twenty-two cells across the four quadrants which pin a container: local and remote move, local and remote create.
+        #expect(buildable.count == 350, """
         The harness can build \(buildable.count) of the \(all.count) cells of phase A. A change to this number is either a primitive gained or coverage lost, and both are worth a deliberate edit here.
         """)
     }
@@ -153,13 +154,15 @@ struct ScenarioSelectionTests {
     ///
     /// Both counts are pinned per quadrant. The first four quadrants each offer exactly twelve cells, which read for a while like a rule and is a coincidence of what the blockers happen to prune: a create pins its **container** rather than its item, the container lattice is smaller than the item lattice, and the create quadrants therefore offer nine. A number changing here is either a primitive gained or coverage lost, and both are worth a deliberate edit.
     ///
+    /// The four quadrants which pin a container now run every cell they offer. They ran fewer because a container asked to be deeply materialized was judged against the *item's* kind and dropped whenever that item was a file — which is the whole of the difference, and is why the four that moved are exactly the four with a container in their realization.
+    ///
     @Test(arguments: [
         ("LocalDelete", LocalDeleteTests.cells, Quadrant(origin: .local, operation: .delete), 52, 40),
         ("LocalMetadataUpdate", LocalMetadataUpdateTests.cells, Quadrant(origin: .local, operation: .metadataUpdate), 26, 20),
-        ("LocalMove", LocalMoveTests.cells, Quadrant(origin: .local, operation: .move), 24, 18),
-        ("RemoteMove", RemoteMoveTests.cells, Quadrant(origin: .remote, operation: .move), 36, 30),
-        ("LocalCreate", LocalCreateTests.cells, Quadrant(origin: .local, operation: .create), 24, 19),
-        ("RemoteCreate", RemoteCreateTests.cells, Quadrant(origin: .remote, operation: .create), 36, 31),
+        ("LocalMove", LocalMoveTests.cells, Quadrant(origin: .local, operation: .move), 24, 24),
+        ("RemoteMove", RemoteMoveTests.cells, Quadrant(origin: .remote, operation: .move), 36, 36),
+        ("LocalCreate", LocalCreateTests.cells, Quadrant(origin: .local, operation: .create), 24, 24),
+        ("RemoteCreate", RemoteCreateTests.cells, Quadrant(origin: .remote, operation: .create), 36, 36),
         ("LocalContentUpdate", LocalContentUpdateTests.cells, Quadrant(origin: .local, operation: .contentUpdate), 8, 8),
         ("RemoteContentUpdate", RemoteContentUpdateTests.cells, Quadrant(origin: .remote, operation: .contentUpdate), 24, 22),
         ("ConcurrentDelete", ConcurrentDeleteTests.cells, Quadrant(origin: .concurrent, operation: .delete), 52, 40),

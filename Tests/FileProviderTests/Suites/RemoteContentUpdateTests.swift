@@ -39,7 +39,8 @@ struct RemoteContentUpdateTests {
         }
 
         try await CleanRoom.with(underTest, testName: "RemoteContentUpdate.\(cell.item.kind.rawValue).\(level.rawValue)", cell: cell.description) { room in
-            let name = "revised.bin"
+            // Named for the kind rather than as a literal. It was "revised.bin" for everything, so a bundle cell built a directory called `revised.bin` — which macOS does not treat as a bundle. The suite handles bundles correctly everywhere downstream, so those cells ran, passed, and had measured a plain directory.
+            let name = ScenarioWorld.name("revised", for: cell.item.kind)
             let subject = try await ScenarioWorld.build(cell, in: room, named: name)
             let url = room.localURL(of: subject.localPath(of: name))
 
@@ -67,10 +68,12 @@ struct RemoteContentUpdateTests {
             let node = try #require(try LocalNode.at(contentURL), "The file is gone from the client after being changed on the server.")
 
             switch level {
-                case .dataless:
+                case .dataless, .evicted:
                     // The regression the model names. Refreshing an item by fetching it passes every assertion about names, sizes and bytes, and costs a user a download of a file they have never opened.
+                    //
+                    // Evicted belongs here and used to throw. An evicted file is dataless — the content was fetched and then dropped — and the claim is if anything stronger for it: the user asked for that space back, so re-fetching on a change the user did not make takes it away again.
                     #expect(node.isDataless, """
-                    A content change on the server materialized a file the user had never opened: it was a placeholder before and holds \(node.allocatedBlocks) blocks of content now. Updating metadata and version is all this change required.
+                    A content change on the server materialized a file which was \(level.rawValue) before it: it holds \(node.allocatedBlocks) blocks of content now. Updating metadata and version is all this change required.
                     """)
 
                 case .materialized:
@@ -82,7 +85,8 @@ struct RemoteContentUpdateTests {
                     The file the client had already downloaded still reads as something other than what the server now holds, so the two sides disagree about the contents of a file the user has open.
                     """)
 
-                case .evicted, .materializedDeep, .unknown:
+                case .materializedDeep, .unknown:
+                    // These two really are excluded upstream — `materializedDeep` needs a folder with children and this quadrant's items are files and bundles, and `unknown` is never buildable. Evicted was in this list and is not excluded: `ScenarioSelection.isBuildable` admits it for a file, so six cells were selected, given a room, given a world, and then thrown out here by a message asserting the opposite of what had just happened.
                     throw ScenarioWorldError.unsupported("a cell at \(level.rawValue), which the shared filter excludes")
             }
 

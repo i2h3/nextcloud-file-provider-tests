@@ -79,14 +79,18 @@ struct CleanRoom {
     ///
     static func with(_ underTest: ServerUnderTest, testName: String, cell: String? = nil, _ body: @escaping (CleanRoom) async throws -> Void) async throws {
         // A cell whose feature the client declines is run like any other and its failure registered as expected. Handled here rather than in each suite so that a quadrant written next year inherits it: the alternative is every suite remembering, and the failure mode of remembering is coverage which disappears without anybody noticing.
-        guard let reason = cell.flatMap(KnownLimitation.reason(for:)) else {
-            try await perform(underTest, testName: testName, cell: cell, body)
+        //
+        // The expectation covers the body and nothing else. It used to wrap the whole of `perform`, which is construction, body and teardown — so for the twenty-seven cells carrying a limitation, Docker failing to start, an account failing to provision, a domain never appearing or a teardown raising were all registered as "the client does not upload packages" and painted as expected on the run's page. A cell whose verdict cannot fail for the right reason is not covered by running it, which is the thing running it was for.
+        try await perform(underTest, testName: testName, cell: cell) { room in
+            guard let reason = cell.flatMap(KnownLimitation.reason(for:)) else {
+                try await body(room)
 
-            return
-        }
+                return
+            }
 
-        await withKnownIssue(reason) {
-            try await perform(underTest, testName: testName, cell: cell, body)
+            await withKnownIssue(reason) {
+                try await body(room)
+            }
         }
     }
 

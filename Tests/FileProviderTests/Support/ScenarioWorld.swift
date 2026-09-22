@@ -307,8 +307,19 @@ enum ScenarioWorld {
             }
         }
 
-        let localName = try await ScenarioWorldError.doing("finding the name the client gave \"\(name)\"") {
-            try resolveLocalName(of: name, for: scenario, under: parentLocalPath, in: room)
+        // Not asked of a container which has to stay unentered, because asking lists it.
+        //
+        // This is the same mistake twice in two days, from opposite directions. `resolveLocalName` used to return the requested name without looking, which made the wait above a no-op; it now lists the container, which makes *this* call the enumeration the cell forbids — asserted absent a dozen lines earlier by the ledger check, and then performed here, before the operation under test runs. Every `.parents` cell with a dataless container would have measured a materialized one while reporting itself as dataless, which is the quiet half of the failure and the reason the ledger is consulted at all.
+        //
+        // Nothing is lost by skipping it. A bounce is a decision the system makes while writing an arriving item into a container, and `resolveLocalName` exists to find out which name it chose. A container nothing has entered has had nothing written into it by the client, so the name is the one that was asked for.
+        let localName: String
+
+        if mustNotEnterParent {
+            localName = name
+        } else {
+            localName = try await ScenarioWorldError.doing("finding the name the client gave \"\(name)\"") {
+                try resolveLocalName(of: name, for: scenario, under: parentLocalPath, in: room)
+            }
         }
 
         return ScenarioSubject(
