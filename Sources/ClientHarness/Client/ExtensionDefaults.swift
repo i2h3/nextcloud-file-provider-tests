@@ -62,9 +62,15 @@ enum ExtensionDefaults {
     ///
     /// `defaults read` fails both for a switch which is not set and for a domain it is not allowed to open, and those two have to be told apart: one is the ordinary state of a machine where the client has never run, and the other is a machine whose answers cannot be trusted. Only the first should let ``clear(_:)`` report success.
     ///
-    /// They are told apart by what `defaults` complains about, and it has two ways of saying "not set" depending on how much is missing. With the domain present and the key absent it writes `The domain/default pair of (…, …) does not exist`; with the domain itself absent — the ordinary case on a machine where the extension has never run — it writes `Domain '…' not found.`. Both mean not set. Any other failure is a failure to look.
+    /// They are told apart by what `defaults` complains about, and it has more than one way of saying "not set" depending on how much is missing and which of its own code paths answered:
     ///
-    /// Both strings are pinned by tests, because they are macOS's wording rather than ours and a release which changes them would otherwise turn every machine into an unreadable one, quietly and everywhere at once.
+    /// - `The domain/default pair of (…, …) does not exist`
+    /// - `Error: Domain '…' not found.` — the ordinary case where the extension has never run
+    /// - `Error: Could not find key '…' in domain '…'.` — the domain exists and the key does not
+    ///
+    /// All of them mean not set. Any other failure is a failure to look.
+    ///
+    /// Every string is pinned by a test, because they are macOS's wording rather than ours and a release which reworded them would turn every machine into an unreadable one, quietly and everywhere at once. The list was two strings until a run found the third — and found it in one attempt only because ``ExtensionDefaultState/unreadable(_:)`` carries what was said. Enumerating a vendor's error messages is a poor way to ask a question and it is the only one available: these preferences live inside another application's sandbox container, which is why the tool is shelled out to at all rather than read through `CFPreferences` from this process.
     ///
     /// - Parameters:
     ///     - key: The switch to read.
@@ -125,6 +131,15 @@ enum ExtensionDefaults {
     /// - Returns: `true` if the complaint is an absence rather than a refusal.
     ///
     static func isAbsence(_ message: String) -> Bool {
-        message.contains("does not exist") || message.contains("not found")
+        let complaint = message.lowercased()
+
+        return absenceComplaints.contains { complaint.contains($0) }
     }
+
+    ///
+    /// The ways `defaults` says a value is not set, in the words it uses.
+    ///
+    /// Lowercased and matched as fragments, so that a message which gains a prefix or a full stop still reads as the same answer. Deliberately narrow: each one is a phrase about something missing, and none of them would be produced by a refusal to look.
+    ///
+    static let absenceComplaints = ["does not exist", "not found", "could not find key"]
 }

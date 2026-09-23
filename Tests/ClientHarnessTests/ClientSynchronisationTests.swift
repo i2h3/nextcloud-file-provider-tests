@@ -68,9 +68,15 @@ struct ClientSynchronisationTests {
     /// Pinned because they are its wording, not ours, and everything downstream turns on telling them apart from a refusal. `unblock()` confirms its own work by reading the switch back; if a release reworded these, every machine would start reading as unreadable and every room would throw before running a test. The opposite mistake is the one this replaced — a read which could not happen counting as the switch being absent, so unblocking confirmed itself by failing to look.
     ///
     @Test
-    func `Both of the ways defaults reports an absent value are read as absent.`() {
+    func `Every way defaults reports an absent value is read as absent.`() {
+        // The domain exists and the key does not.
         #expect(ExtensionDefaults.isAbsence("The domain/default pair of (com.example.app, someKey) does not exist"))
+
+        // The domain itself does not exist, which is a machine where the extension has never run.
         #expect(ExtensionDefaults.isAbsence("Error: Domain 'com.nextcloud.desktopclient.FileProviderExt' not found."))
+
+        // The same absence as the first, by another of the tool's own code paths. This one was missing, and a staged run found it at the first attempt — the domain had been created by a client which had run, and the key had not been written.
+        #expect(ExtensionDefaults.isAbsence("Error: Could not find key 'blockSync' in domain 'com.nextcloud.desktopclient.FileProviderExt'."))
     }
 
     ///
@@ -81,6 +87,9 @@ struct ClientSynchronisationTests {
         #expect(!ExtensionDefaults.isAbsence("Operation not permitted"))
         #expect(!ExtensionDefaults.isAbsence(""))
         #expect(!ExtensionDefaults.isAbsence("kCFPreferencesAnyApplication: permission denied"))
+
+        // The distinction the whole family rests on: a thing which is missing, against a look which was refused. "Denied" and "not permitted" are the second, whatever they are said about.
+        #expect(!ExtensionDefaults.isAbsence("Error: access to domain 'com.example.app' was denied."))
     }
 
     ///
