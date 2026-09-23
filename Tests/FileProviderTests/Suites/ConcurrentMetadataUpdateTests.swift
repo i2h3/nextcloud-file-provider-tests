@@ -77,11 +77,11 @@ struct ConcurrentMetadataUpdateTests {
 
             do {
                 try await Waiter.poll("both sides settle on the same name", timeout: LiveEnvironment.scaled(.seconds(240))) {
-                    let remote = Set(try await room.remoteChildren(of: subject.parentRemotePath).map(\.name)).intersection([byClient, byServer])
+                    let remote = try await Set(room.remoteChildren(of: subject.parentRemotePath).map(\.name)).intersection([byClient, byServer])
 
                     // Listing the domain blocks in the kernel, so it is read on a thread of its own rather than on the cooperative pool.
                     let listing = try await Deadline.runBlocking(within: LiveEnvironment.scaled(.seconds(30))) {
-                        Set(try room.localChildren(of: subject.parentLocalPath).map(\.name))
+                        try Set(room.localChildren(of: subject.parentLocalPath).map(\.name))
                     }
 
                     guard let local = listing?.intersection([byClient, byServer]), !remote.isEmpty, remote == local else {
@@ -97,8 +97,8 @@ struct ConcurrentMetadataUpdateTests {
             }
 
             guard converged else {
-                let remote = Set(try await room.remoteChildren(of: subject.parentRemotePath).map(\.name)).intersection([byClient, byServer])
-                let local = Set(try room.localChildren(of: subject.parentLocalPath).map(\.name)).intersection([byClient, byServer])
+                let remote = try await Set(room.remoteChildren(of: subject.parentRemotePath).map(\.name)).intersection([byClient, byServer])
+                let local = try Set(room.localChildren(of: subject.parentLocalPath).map(\.name)).intersection([byClient, byServer])
 
                 Issue.record("""
                 The item was renamed to "\(byClient)" in the client and to "\(byServer)" on the server, and four minutes later the two sides still disagree about what it is called. The server holds \(remote.isEmpty ? "neither name" : remote.sorted().joined(separator: ", ")) and the client holds \(local.isEmpty ? "neither name" : local.sorted().joined(separator: ", ")). The server \(serverAcceptedRename ? "accepted its own rename" : "refused its own rename, so the client's had already arrived").
@@ -136,7 +136,6 @@ struct ConcurrentMetadataUpdateTests {
 
             ScenarioOracle.decline("noDuplicatesOrOrphans", because: ScenarioOracle.posixListingReason)
             ScenarioOracle.decline("contentPolicyInheritance", because: ScenarioOracle.unpinnedReason)
-
         }
     }
 }

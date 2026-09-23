@@ -29,8 +29,8 @@ struct JUnitReaderTests {
         try body(url)
     }
 
-    @Test("A report whose every suite ran nothing says nothing ran.")
-    func nothingRan() throws {
+    @Test
+    func `A report whose every suite ran nothing says nothing ran.`() throws {
         try withReport(#"""
         <?xml version="1.0" encoding="UTF-8"?>
         <testsuites>
@@ -41,8 +41,8 @@ struct JUnitReaderTests {
         }
     }
 
-    @Test("An empty suite beside one which ran does not hide it.")
-    func emptySuiteBesideARealOne() throws {
+    @Test
+    func `An empty suite beside one which ran does not hide it.`() throws {
         // The regression this exists for. A toolchain which runs no XCTest tests still writes an empty element for that system, and the check used to look for `tests="0"` anywhere in the file.
         try withReport(#"""
         <?xml version="1.0" encoding="UTF-8"?>
@@ -57,14 +57,14 @@ struct JUnitReaderTests {
         }
     }
 
-    @Test("A report which cannot be read counts as having run.")
-    func unreadableReport() {
+    @Test
+    func `A report which cannot be read counts as having run.`() {
         // Deliberately the forgiving direction: failing a green run because its report is missing would be worse than missing a mistyped filter.
         #expect(JUnitReader.ranAnyTests(in: URL(filePath: "/nowhere/\(UUID().uuidString)/\(JUnitReader.fileName)", directoryHint: .notDirectory)))
     }
 
-    @Test("A report holding no count at all counts as having run.")
-    func reportWithoutCounts() throws {
+    @Test
+    func `A report holding no count at all counts as having run.`() throws {
         try withReport("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<testsuites></testsuites>") { url in
             #expect(JUnitReader.ranAnyTests(in: url))
         }

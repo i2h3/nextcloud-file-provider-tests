@@ -321,7 +321,7 @@ public enum RunIndex {
         let failed = Set(unexpected.compactMap(\.caseDisplayName)).count
         let spent = rooms.compactMap { room in room.endedAt.map { $0.timeIntervalSince(room.startedAt) } }.reduce(0, +)
 
-        let measured = samples.values.flatMap { $0 }.reduce(0.0) { total, sample in
+        let measured = samples.values.flatMap(\.self).reduce(0.0) { total, sample in
             total + Double(sample.duration.components.seconds) + Double(sample.duration.components.attoseconds) / 1e18
         }
 
@@ -397,19 +397,17 @@ public enum RunIndex {
         for room in rooms {
             let mine = failures[room.user] ?? []
             let cell = room.cell ?? room.testName
-            let taken = samples[cell]?.compactMap { $0.duration }.max()
+            let taken = samples[cell]?.compactMap(\.duration).max()
 
             // A known issue is not a failure and must not be shown as one. It is a cell whose subject declines the feature, running deliberately so that the day it stops failing somebody is told — a red row would train a reader to ignore exactly the rows which will one day mean something.
             let isExpected = !mine.isEmpty && mine.allSatisfy(\.isKnown)
 
-            let status: String
-
-            if mine.isEmpty {
-                status = taken == nil ? "<span class=\"meh\">no measurement</span>" : "<span class=\"ok\">passed</span>"
+            let status: String = if mine.isEmpty {
+                taken == nil ? "<span class=\"meh\">no measurement</span>" : "<span class=\"ok\">passed</span>"
             } else if isExpected {
-                status = "<span class=\"meh\">known limitation</span>"
+                "<span class=\"meh\">known limitation</span>"
             } else {
-                status = "<span class=\"bad\">failed</span>"
+                "<span class=\"bad\">failed</span>"
             }
 
             var detail = mine.map { "<p class=\"why\">\(escape($0.message))</p>" }.joined()
@@ -433,7 +431,8 @@ public enum RunIndex {
             let mine = failures[room.user] ?? []
 
             return !mine.isEmpty && !mine.allSatisfy(\.isKnown)
-        }.count
+        }
+        .count
 
         // Wall-clock across the quadrant's rooms, which is what a reader is deciding about when they wonder whether to run it again. Building a room dominates it — a cell's own operation is usually under a second — so this is mostly the price of isolation, and saying so is the point.
         let spent = rooms.compactMap { room in room.endedAt.map { $0.timeIntervalSince(room.startedAt) } }.reduce(0, +)
@@ -457,7 +456,7 @@ public enum RunIndex {
     /// - Returns: The markup.
     ///
     static func unattributed(_ failures: [ReportedFailure], attributed: [String: [ReportedFailure]]) -> String {
-        let placed = Set(attributed.values.flatMap { $0 }.map(\.message))
+        let placed = Set(attributed.values.flatMap(\.self).map(\.message))
         let rest = failures.filter { !placed.contains($0.message) }
 
         guard !rest.isEmpty else {
@@ -466,7 +465,8 @@ public enum RunIndex {
 
         let rows = rest.map { failure in
             "<tr><td><span class=\"what\">\(escape(CellPhrase.sentence(for: failure.caseDisplayName ?? failure.testDisplayName ?? "unknown")))</span></td><td>\(escape(failure.message))</td></tr>"
-        }.joined()
+        }
+        .joined()
 
         return """
         <h2>Failures outside any room</h2>

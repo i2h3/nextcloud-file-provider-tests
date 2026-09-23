@@ -53,7 +53,7 @@ struct Report: AsyncParsableCommand {
         let evidence = RunEvidence.gather(from: directory)
 
         // Rebuilt every time, which is what makes a run recorded before this existed readable now. It describes what the run did rather than what went wrong, so it is written whether or not anything did.
-        Console.log("Overview:  \(try RunIndex.write(for: evidence).path(percentEncoded: false))")
+        try Console.log("Overview:  \(RunIndex.write(for: evidence).path(percentEncoded: false))")
 
         guard !evidence.failures.isEmpty else {
             Console.log("The run at \(directory.lastPathComponent) had no failures. Nothing further to report.")

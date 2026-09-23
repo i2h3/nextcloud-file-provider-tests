@@ -23,8 +23,6 @@ public struct RunEnvironment: Sendable {
     ///
     public static let allowUnnotarizedClientVariableName = "FPT_ALLOW_UNNOTARIZED_CLIENT"
 
-
-
     ///
     /// The name of the environment variable pointing at the directory collecting logs, attachments and reports.
     ///

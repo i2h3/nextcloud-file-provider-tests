@@ -102,7 +102,7 @@ struct LocalCreateTests {
                             return listing?.contains { $0.name == ScenarioWorld.childFixtureName } ?? false
                         }
                     } catch is WaitTimeoutError {
-                        let children = (try? await room.remoteChildren(of: site.remotePath(of: name))) ?? []
+                        let children = await (try? room.remoteChildren(of: site.remotePath(of: name))) ?? []
 
                         Issue.record("""
                         The folder reached the server without the file inside it, so a person who creates a folder with something in it gets an empty folder. It holds: \(children.map(\.name).sorted().joined(separator: ", ")).

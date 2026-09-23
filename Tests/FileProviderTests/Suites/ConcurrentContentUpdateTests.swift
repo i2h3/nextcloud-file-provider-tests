@@ -65,7 +65,7 @@ struct ConcurrentContentUpdateTests {
 
             // Whether there was ever anything to resolve. Two different versions existing at the same moment is what makes this a conflict rather than two edits in a row, and without pausing the item that is a matter of timing rather than of arrangement. Read immediately, before either side has had time to carry its version to the other.
             let serverHeld = try await room.remoteFingerprint(of: contentRemotePath)
-            let clientHeld = ContentFactory.fingerprint(of: try Data(contentsOf: contentURL))
+            let clientHeld = try ContentFactory.fingerprint(of: Data(contentsOf: contentURL))
 
             guard serverHeld == serverFingerprint, clientHeld == clientFingerprint else {
                 // Reported rather than passed. A cell which treats "no conflict occurred" as a success is a cell which cannot fail, and it would count towards coverage while testing nothing.
@@ -83,7 +83,7 @@ struct ConcurrentContentUpdateTests {
 
             MetricsRecorder.record("concurrent content write", duration: ContinuousClock.now - started, in: room, test: cell.description)
 
-            // Where an entry's bytes live, which is the entry itself for a file and a file inside it for a package.
+            /// Where an entry's bytes live, which is the entry itself for a file and a file inside it for a package.
             func contentPaths(of entry: String) -> (local: URL, remote: String) {
                 let base = room.localURL(of: subject.localPath(of: entry))
 
@@ -93,9 +93,9 @@ struct ConcurrentContentUpdateTests {
                 )
             }
 
-            // How long each side's copy of an entry is, read without materializing either.
-            //
-            // By length rather than by bytes, which is what the two versions were given different lengths for. Reading a placeholder to compare its content is how a test materializes the thing it is measuring, and a conflict copy the client has not fetched is a placeholder — one which still reports the size of the file it stands for.
+            /// How long each side's copy of an entry is, read without materializing either.
+            ///
+            /// By length rather than by bytes, which is what the two versions were given different lengths for. Reading a placeholder to compare its content is how a test materializes the thing it is measuring, and a conflict copy the client has not fetched is a placeholder — one which still reports the size of the file it stands for.
             func lengths(of entry: String) async throws -> (local: Int64, remote: Int64)? {
                 let paths = contentPaths(of: entry)
 

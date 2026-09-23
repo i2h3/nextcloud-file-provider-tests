@@ -103,10 +103,10 @@ enum ScenarioWorld {
     ///
     static func stem(_ base: String, encoding: FilenameEncoding?) -> String {
         switch encoding {
-            case .none: return base
-            case .nfc: return "\(base)-café".precomposedStringWithCanonicalMapping
-            case .nfd: return "\(base)-café".decomposedStringWithCanonicalMapping
-            case .caseCollision: return "\(base)-Sibling"
+            case .none: base
+            case .nfc: "\(base)-café".precomposedStringWithCanonicalMapping
+            case .nfd: "\(base)-café".decomposedStringWithCanonicalMapping
+            case .caseCollision: "\(base)-Sibling"
         }
     }
 
@@ -276,12 +276,10 @@ enum ScenarioWorld {
         // The path used to be built from the requested name and kept, and the resolved name was worked out at the very end for the subject alone. So on a volume which bounces a colliding name, `realize` and `verify` both looked where the item had been asked to go rather than where it went, and the first thing to notice was `#require(LocalNode.at(url))` failing with "The item did not reach the client, so the cell's precondition was never established." That sentence goes into the artifact a person triages from, and it is false: the item did reach the client, the wait a few lines above proved it, and `resolveLocalName` had already recorded through which name. The harness held the truth and filed the opposite.
         //
         // Not asked of a container which has to stay unentered, because asking lists it. That is the same mistake from the other side: `resolveLocalName` used to return the requested name without looking, which made the wait a no-op; it now lists, which would make this call the enumeration the cell forbids — asserted absent by the ledger check a dozen lines up and then performed. Nothing is lost by skipping it, because a bounce is a decision made while writing an arriving item into a container, and nothing has written into a container nothing has entered.
-        let localName: String
-
-        if mustNotEnterParent {
-            localName = name
+        let localName: String = if mustNotEnterParent {
+            name
         } else {
-            localName = try await ScenarioWorldError.doing("finding the name the client gave \"\(name)\"") {
+            try await ScenarioWorldError.doing("finding the name the client gave \"\(name)\"") {
                 try resolveLocalName(of: name, for: scenario, under: parentLocalPath, in: room)
             }
         }

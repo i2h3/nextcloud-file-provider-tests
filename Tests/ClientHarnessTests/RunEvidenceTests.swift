@@ -160,7 +160,7 @@ struct RunEvidenceTests {
     func `A failure after the run finished is not attributed to its last room.`() {
         let (evidence, failure) = Self.evidence(
             rooms: [Self.room("only", from: 100, to: 200)],
-            occurredAt: 5_000,
+            occurredAt: 5000,
             finishedAt: 400
         )
 
@@ -186,10 +186,10 @@ struct RunEvidenceTests {
         let (near, nearFailure) = Self.evidence(rooms: [Self.room("only", from: 100, to: 200)], occurredAt: 230)
         #expect(near.room(of: nearFailure)?.user == "only")
 
-        let (far, farFailure) = Self.evidence(rooms: [Self.room("only", from: 100, to: 200)], occurredAt: 5_000)
+        let (far, farFailure) = Self.evidence(rooms: [Self.room("only", from: 100, to: 200)], occurredAt: 5000)
         #expect(far.room(of: farFailure) == nil)
 
-        let (open, openFailure) = Self.evidence(rooms: [Self.room("only", from: 100, to: nil)], occurredAt: 5_000)
+        let (open, openFailure) = Self.evidence(rooms: [Self.room("only", from: 100, to: nil)], occurredAt: 5000)
         #expect(open.room(of: openFailure)?.user == "only")
     }
 

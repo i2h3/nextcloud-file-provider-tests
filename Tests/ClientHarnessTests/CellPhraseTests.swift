@@ -11,7 +11,7 @@ import Testing
 ///
 @Suite("Cell phrase")
 struct CellPhraseTests {
-    @Test("Every axis of a cell reaches its sentence.", arguments: [
+    @Test(arguments: [
         ("local delete item:dataless kind:folderEmpty at:standard:root trash:with",
          "Local deletion of a dataless empty folder in the domain root, with Nextcloud server trash enabled"),
         ("local delete item:materialized kind:file size:small at:standard:subdirectory trash:without",
@@ -27,18 +27,18 @@ struct CellPhraseTests {
         ("remote move parents:dataless->materialized kind:folderWithChildren from:standard:subdirectory to:standard:root",
          "Remote move of a non-empty folder from a subfolder the client had never enumerated into the domain root"),
     ])
-    func sentences(_ example: (cell: String, expected: String)) {
+    func `Every axis of a cell reaches its sentence.`(_ example: (cell: String, expected: String)) {
         #expect(CellPhrase.sentence(for: example.cell) == example.expected)
     }
 
-    @Test("A suite name is still readable when there is no cell to phrase.")
-    func fallsBackToTheIdentifier() {
+    @Test
+    func `A suite name is still readable when there is no cell to phrase.`() {
         // Rooms recorded before the cell was written into the manifest, and the hand-written suites which have no cell at all.
         #expect(CellPhrase.sentence(for: "ConcurrentDelete.folderWithChildren.dataless") == "Concurrent delete folder with children dataless")
     }
 
-    @Test("A quadrant reads as words rather than as an identifier.")
-    func headings() {
+    @Test
+    func `A quadrant reads as words rather than as an identifier.`() {
         #expect(CellPhrase.heading(for: "concurrent contentUpdate") == "Concurrent Content Update")
         #expect(CellPhrase.heading(for: "ConcurrentContentUpdate") == "Concurrent Content Update")
     }

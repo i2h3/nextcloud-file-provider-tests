@@ -132,7 +132,9 @@ public enum Preflight {
         let outcomes = PrivacyProbe.clientApplicationData.map { ($0, $0.inspect()) }
 
         let refused = outcomes.compactMap { probe, outcome -> String? in
-            guard case let .refused(code) = outcome else { return nil }
+            guard case let .refused(code) = outcome else {
+                return nil
+            }
 
             return "\(probe.subject) (\(String(cString: strerror(code))))"
         }
@@ -146,7 +148,7 @@ public enum Preflight {
             )
         }
 
-        let readable = outcomes.filter { $0.1 == .readable }.map { $0.0.subject }
+        let readable = outcomes.filter { $0.1 == .readable }.map(\.0.subject)
 
         guard readable.isEmpty else {
             return PreflightCheck(subject: "Client data", isSatisfied: true, detail: "readable: \(readable.joined(separator: ", "))")
@@ -167,7 +169,9 @@ public enum Preflight {
 
         guard outcomes.contains(where: { $0.1 == .readable }) else {
             let refused = outcomes.compactMap { probe, outcome -> String? in
-                guard case let .refused(code) = outcome else { return nil }
+                guard case let .refused(code) = outcome else {
+                    return nil
+                }
 
                 return "\(probe.subject) (\(String(cString: strerror(code))))"
             }

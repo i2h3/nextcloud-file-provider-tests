@@ -10,7 +10,7 @@ import Foundation
 ///
 /// That is not hypothetical here. macOS 27 put the client's application data behind a grant of its own, and a run on a machine without it reads every one of these switches as absent. The switch this matters most for is the one which stops the client synchronising: ``ClientSynchronisation/unblock()`` confirms its own work by reading the switch back, and with two states a read which could not happen confirmed it.
 ///
-public enum ExtensionDefaultState: Equatable, Sendable {
+enum ExtensionDefaultState: Equatable, Sendable {
     ///
     /// The switch is present and reads as on.
     ///

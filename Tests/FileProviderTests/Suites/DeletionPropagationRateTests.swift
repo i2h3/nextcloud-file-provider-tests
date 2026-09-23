@@ -96,7 +96,7 @@ struct DeletionPropagationRateTests {
     ///
     /// The extra arm is generated only where it says something: a cell which already fetches the item cannot be told apart from itself, and only a file can be fetched and evicted.
     ///
-    // Restricted to the cells whose server keeps deleted items. Whether the trash is on has nothing to do with whether a deletion propagates, and running both doubles a suite which already takes the better part of three hours.
+    /// Restricted to the cells whose server keeps deleted items. Whether the trash is on has nothing to do with whether a deletion propagates, and running both doubles a suite which already takes the better part of three hours.
     static let trials: [Trial] = LocalDeleteTests.cells.filter { $0.trash == .with }.flatMap { cell -> [Trial] in
         guard case let .item(level) = cell.realization else {
             return []

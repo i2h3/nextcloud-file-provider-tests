@@ -25,8 +25,8 @@ struct PrivacyProbeTests {
         try body(directory)
     }
 
-    @Test("A file this process may read is readable.")
-    func readableFile() throws {
+    @Test
+    func `A file this process may read is readable.`() throws {
         try withTemporaryDirectory { directory in
             let url = directory.appending(path: "readable", directoryHint: .notDirectory)
             try Data("contents".utf8).write(to: url)
@@ -35,15 +35,15 @@ struct PrivacyProbeTests {
         }
     }
 
-    @Test("A directory this process may list is readable.")
-    func readableDirectory() throws {
+    @Test
+    func `A directory this process may list is readable.`() throws {
         try withTemporaryDirectory { directory in
             #expect(PrivacyProbe(url: directory, subject: "a directory").inspect() == .readable)
         }
     }
 
-    @Test("A file which is not there is absent rather than refused.")
-    func absentFile() throws {
+    @Test
+    func `A file which is not there is absent rather than refused.`() throws {
         try withTemporaryDirectory { directory in
             let url = directory.appending(path: "missing", directoryHint: .notDirectory)
 
@@ -51,8 +51,8 @@ struct PrivacyProbeTests {
         }
     }
 
-    @Test("A path below something which is not a directory is absent rather than refused.")
-    func absentBelowFile() throws {
+    @Test
+    func `A path below something which is not a directory is absent rather than refused.`() throws {
         try withTemporaryDirectory { directory in
             let file = directory.appending(path: "file", directoryHint: .notDirectory)
             try Data("contents".utf8).write(to: file)
@@ -62,8 +62,8 @@ struct PrivacyProbeTests {
         }
     }
 
-    @Test("A file this process may not read is refused rather than absent.")
-    func refusedFile() throws {
+    @Test
+    func `A file this process may not read is refused rather than absent.`() throws {
         // The distinction this whole type exists for, and the one the check built on `isReadableFile` could not make: both of these used to be `false`, and a probe whose location macOS had moved reported a machine with the grant as a machine without it.
         try #require(getuid() != 0, "root reads everything, so this test can only mean something for an ordinary user.")
 
@@ -76,8 +76,8 @@ struct PrivacyProbeTests {
         }
     }
 
-    @Test("The locations Full Disk Access is probed with do not include the per-user privacy database.")
-    func doesNotProbeTheMovedDatabase() {
+    @Test
+    func `The locations Full Disk Access is probed with do not include the per-user privacy database.`() {
         // macOS 27 moved it into `/private/var/containers/Data/ProtectedSystem`, where Full Disk Access does not reach it either, so it cannot answer this question on any macOS any more. It is named here so that restoring it is a deliberate act rather than an oversight.
         let moved = ClientPaths.home.appending(path: "Library/Application Support/com.apple.TCC/TCC.db", directoryHint: .notDirectory)
 
@@ -85,8 +85,8 @@ struct PrivacyProbeTests {
         #expect(PrivacyProbe.fullDiskAccess.count > 1, "One probe cannot tell a refusal from a location this version of macOS no longer has.")
     }
 
-    @Test("The client's own data is probed where the suite reads it.")
-    func probesTheEvidencePaths() {
+    @Test
+    func `The client's own data is probed where the suite reads it.`() {
         // Not stand-ins. Since macOS 27 these are protected separately from Full Disk Access, so a check reading anything else would pass while every test starved.
         #expect(PrivacyProbe.clientApplicationData.contains { $0.url == ClientPaths.configurationFile })
         #expect(PrivacyProbe.clientApplicationData.contains { $0.url == ClientPaths.extensionLogs })

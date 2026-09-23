@@ -260,7 +260,10 @@ per-test users, the same artifacts. What it does not do is delete the containers
 
 ## What has been measured
 
-Across four servers on one machine, `latest` being 34.0.3 and the derived predecessor 33.0.8:
+Across four servers on one machine, `latest` being 34.0.3 and the derived predecessor 33.0.8. The
+`latest` tag has since moved to 35.0.0, so these figures describe the releases named here rather than
+whatever `latest` resolves to today — which is why a run records the version each server *reported*
+and not the tag it was asked for:
 
 | Measurement | Plain | With the High Performance Backend |
 | --- | ---: | ---: |
@@ -338,6 +341,12 @@ reported yet, and this repository is public.
 
 The directory holds:
 
+- `index.html` — the run's front page, and the one artifact meant to be read rather than parsed. One
+  row per cell, grouped by quadrant, each saying in a sentence what the cell did and how it went, with
+  the technical identifier underneath as a footnote and a link into that cell's logs. Outcomes have a
+  legend, because *no measurement* means nothing to anyone who did not write it. What a cell saw but
+  was not entitled to assert — which name a colliding pair settled on, which version won a conflict —
+  appears beneath its row, on passing cells as much as failing ones.
 - `reports/` — a drafted bug report per defect. See *When a test finds something*.
 - `run.json` — what the run was: the client, the servers and the releases they actually reported, the
   preflight checks, the flags it was started with, and the machine's time zone. The zone is not
@@ -350,11 +359,17 @@ The directory holds:
 - `results-swift-testing.xml` — JUnit. One entry per test function with its total duration, which is
   thinner than it sounds: a parameterized test is a single entry, and neither the server release nor
   the other arguments appear in it. It answers "did the run pass", not "which case failed".
-- `attachments/` — diagnostics bundles and recorded measurements.
-- `clean-rooms/<user>/room.json` — which test the room belonged to, which server it ran against, and
-  when it began and ended. A room's directory is named after the Nextcloud user it created, and that
-  name has no relation to the name of the test function, so without this nothing on disk connects a
-  failure to the logs which might explain it.
+- `attachments/` — diagnostics bundles, recorded measurements, and observations: the things a cell
+  saw and is not entitled to assert. A clause whose specification permits more than one result is
+  recorded rather than judged, and recording it in a terminal would mean two runs a month apart could
+  not be compared.
+- `clean-rooms/<user>/room.json` — which test the room belonged to, which cell of the matrix it was,
+  which server it ran against, and when it began and ended. A room's directory is named after the
+  Nextcloud user it created, and that name has no relation to the name of the test function, so
+  without this nothing on disk connects a failure to the logs which might explain it. The window is
+  how a failure is placed: rooms never overlap, so a room owns every moment from its own start to the
+  next room's. Not to its own end — an error thrown out of a test is recorded after its room has been
+  torn down, so a window closed at `endedAt` places exactly the failures worth placing nowhere.
 - `clean-rooms/<user>/client-logs/` — the desktop client's own log for that test: the account and
   the domain lifecycle.
 - `clean-rooms/<user>/extension-logs/` — the File Provider extension's log for that test, which is
