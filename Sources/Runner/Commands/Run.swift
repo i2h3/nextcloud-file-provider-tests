@@ -98,7 +98,12 @@ struct Run: AsyncParsableCommand {
         }
 
         if noClientReset {
-            Console.log("Leaving the desktop client alone, as asked. Suites which need a configured account will fail.")
+            // The configuration is copied aside even so, because this flag does not protect it and reads as though it does.
+            //
+            // What it skips is the machine-level reset: the confirmation, the domains, the keychain. It does not stop a clean room wiping the configuration directory, which every room does on its way in — so a run started with this flag and a filter which happens to include a suite that builds rooms destroys the configuration with neither a confirmation nor a backup. The flag is meant for the server-only suites and nothing enforces that it is used for them. A copy costs a directory and removes the sharp edge.
+            Console.log("Leaving the desktop client's machine-level reset alone, as asked. Its configuration is still copied aside first: any suite which builds a clean room replaces it regardless of this flag.")
+
+            try? ClientReset.backUpConfiguration(to: artifactsDirectory.appending(path: "client-configuration-backup", directoryHint: .isDirectory))
         } else {
             let didReset = try await ClientReset.perform(backingUpTo: artifactsDirectory.appending(path: "client-configuration-backup", directoryHint: .isDirectory)) { inventory in
                 Confirmation.approveReset(of: inventory, isPreApproved: RunEnvironment.isDestructiveAllowedByEnvironment())
@@ -111,6 +116,12 @@ struct Run: AsyncParsableCommand {
 
         let servers = try await ServerMatrix.deploy(tags: tags, includesPush: withPush) { Console.log($0) }
 
+        // Recorded where `teardown` looks, which until now only `prepare` did.
+        //
+        // A run tears its own containers down at the end, so the record is redundant on the path where nothing goes wrong. On every other path it is the only way back: a run stopped with ctrl-C, killed, or ended by a crash leaves four Nextcloud containers and their sidecars running, and `swift run tests teardown` answered "No prepared session was found" — while the identifiers sat in this run's own `run.json`, written one line below. The cleanup existed and the command that performs it could not see it.
+        let session = SessionDirectory(artifacts: artifacts)
+        try? session.write(servers.map(\.descriptor))
+
         manifest.servers = servers.map { RunManifestServer($0.descriptor) }
         try? manifest.write(into: artifactsDirectory)
 
@@ -118,11 +129,13 @@ struct Run: AsyncParsableCommand {
 
         if !noClientReset {
             try? await DesktopClient.quit()
-
-            // Debug logging belongs to a run, and a run is over. Clearing it only at the start of the next one leaves it on in between, which quietly fills the disk of somebody who has stopped running tests.
-            await ClientLogging.disableDebugLogging()
         }
-        await tearDown(servers)
+
+        // Debug logging belongs to a run, and a run is over. Clearing it only at the start of the next one leaves it on in between, which quietly fills the disk of somebody who has stopped running tests.
+        //
+        // Cleared whichever way the flag went, because a clean room turns it on whichever way the flag went. It used to sit inside the branch above, so a run which asked not to reset the client switched the extension's debug logging on once per room and never off — the one state this flag could actually have protected, left set by the code meant to protect it.
+        await ClientLogging.disableDebugLogging()
+        await tearDown(servers, session: session)
 
         manifest.finishedAt = Date()
         try? manifest.write(into: artifactsDirectory)
@@ -202,22 +215,34 @@ struct Run: AsyncParsableCommand {
     ///
     /// - Parameters:
     ///     - servers: The servers to tear down.
+    ///     - session: The record of what was deployed, cleared only once nothing is left in it.
     ///
-    private func tearDown(_ servers: [ManagedServer]) async {
+    private func tearDown(_ servers: [ManagedServer], session: SessionDirectory) async {
         guard !keepContainers else {
-            Console.log("Keeping \(servers.count) container(s) as requested.")
+            Console.log("Keeping \(servers.count) container(s) as requested. `swift run tests teardown` removes them.")
 
             return
         }
 
+        var removed = 0
+
         for server in servers {
             do {
                 try await server.delete()
+                removed += 1
             } catch {
                 // A container which outlives its run is a leak somebody has to clean up by hand, so it is said out loud rather than swallowed.
                 Console.log("Failed to delete the container of \(server.descriptor.description): \(error)")
             }
         }
+
+        guard removed == servers.count else {
+            Console.log("\(servers.count - removed) container(s) are still running and are still recorded. `swift run tests teardown` can be run again.")
+
+            return
+        }
+
+        session.clear()
     }
 
     ///

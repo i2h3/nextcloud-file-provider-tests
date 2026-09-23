@@ -39,9 +39,19 @@ struct Teardown: AsyncParsableCommand {
             try? await DesktopClient.quit()
         }
 
-        let removed = try await Self.removeContainers(describedBy: SessionDirectory(artifacts: artifacts))
+        let outcome = try await Self.removeContainers(describedBy: SessionDirectory(artifacts: artifacts))
 
-        Console.log(removed == 0 ? "No prepared session was found." : "Removed \(removed) container(s).")
+        switch (outcome.found, outcome.removed) {
+            case (0, _):
+                Console.log("No prepared session was found.")
+
+            case let (found, removed) where removed == found:
+                Console.log("Removed \(removed) container(s).")
+
+            case let (found, removed):
+                // Said as its own case, because it used to be the first one. A session whose containers all failed to delete reported "No prepared session was found" — which is the opposite of what happened, and was followed by the record of them being erased.
+                Console.log("Found \(found) container(s) and removed \(removed). The rest are still running and are still recorded, so this command can be run again.")
+        }
     }
 
     ///
@@ -49,19 +59,21 @@ struct Teardown: AsyncParsableCommand {
     ///
     /// Failures are reported rather than raised: a container which has already gone, by hand or by a restart of Docker, should not stop the session being forgotten.
     ///
+    /// The session is forgotten only when there is nothing left in it. It used to be cleared unconditionally, on the reasoning above — but that reasoning covers a container which is *already gone*, and a deletion failing because Docker is unreachable or the daemon is busy leaves the container running with its identifier the only way back to it. Erasing the record there turns a retryable failure into a container nobody can name, and the run after it deploys beside it.
+    ///
     /// - Parameters:
     ///     - session: The session to tear down.
     ///
-    /// - Returns: How many containers were deleted.
+    /// - Returns: How many containers the session recorded and how many were deleted.
     ///
     /// - Throws: Nothing at present, but declared so that callers keep the `await` and the intent.
     ///
     @discardableResult
-    static func removeContainers(describedBy session: SessionDirectory) async throws -> Int {
+    static func removeContainers(describedBy session: SessionDirectory) async throws -> (found: Int, removed: Int) {
         let servers = session.read()
 
         guard !servers.isEmpty else {
-            return 0
+            return (found: 0, removed: 0)
         }
 
         var removed = 0
@@ -75,8 +87,12 @@ struct Teardown: AsyncParsableCommand {
             }
         }
 
+        guard removed == servers.count else {
+            return (found: servers.count, removed: removed)
+        }
+
         session.clear()
 
-        return removed
+        return (found: servers.count, removed: removed)
     }
 }

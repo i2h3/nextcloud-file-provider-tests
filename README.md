@@ -346,7 +346,9 @@ The directory holds:
   the technical identifier underneath as a footnote and a link into that cell's logs. Outcomes have a
   legend, because *no measurement* means nothing to anyone who did not write it. What a cell saw but
   was not entitled to assert — which name a colliding pair settled on, which version won a conflict —
-  appears beneath its row, on passing cells as much as failing ones.
+  appears beneath its row, on passing cells as much as failing ones, and what the run could not judge
+  at all is listed once at the end under *Not judged* — a cell above may have passed without any of
+  those clauses being checked, which is exactly the conclusion a green row would otherwise invite.
 - `reports/` — a drafted bug report per defect. See *When a test finds something*.
 - `run.json` — what the run was: the client, the servers and the releases they actually reported, the
   preflight checks, the flags it was started with, and the machine's time zone. The zone is not

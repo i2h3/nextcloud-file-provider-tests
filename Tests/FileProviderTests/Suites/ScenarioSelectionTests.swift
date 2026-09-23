@@ -140,9 +140,9 @@ struct ScenarioSelectionTests {
         let all = Generator.matrix(for: .a).values.flatMap(\.self)
         let buildable = all.filter(ScenarioSelection.isBuildable)
 
-        #expect(all.count == 406)
-        // 328 until a container's realization level stopped being judged against the item's kind. `materializedDeep` was asked of the item — so a cell whose container had to be deeply materialized was dropped whenever its item was a file, although the container is a folder with children and perfectly buildable. Twenty-two cells across the four quadrants which pin a container: local and remote move, local and remote create.
-        #expect(buildable.count == 350, """
+        #expect(all.count == 466)
+        // 328 until a container's realization level stopped being judged against the item's kind, then 350. The matrix itself then grew from 406 to 466: the root-container rule was written as a whitelist admitting only `materialized`, which also dropped `materializedDeep` — a level neither of the two rules it documents mentions, and not degenerate at a root which holds at least the item under test. Sixty rows in the four quadrants which pin a container, none of them previously counted as unbuildable, because they were never generated at all.
+        #expect(buildable.count == 410, """
         The harness can build \(buildable.count) of the \(all.count) cells of phase A. A change to this number is either a primitive gained or coverage lost, and both are worth a deliberate edit here.
         """)
     }
@@ -159,10 +159,10 @@ struct ScenarioSelectionTests {
     @Test(arguments: [
         ("LocalDelete", LocalDeleteTests.cells, Quadrant(origin: .local, operation: .delete), 52, 40),
         ("LocalMetadataUpdate", LocalMetadataUpdateTests.cells, Quadrant(origin: .local, operation: .metadataUpdate), 26, 20),
-        ("LocalMove", LocalMoveTests.cells, Quadrant(origin: .local, operation: .move), 24, 24),
-        ("RemoteMove", RemoteMoveTests.cells, Quadrant(origin: .remote, operation: .move), 36, 36),
-        ("LocalCreate", LocalCreateTests.cells, Quadrant(origin: .local, operation: .create), 24, 24),
-        ("RemoteCreate", RemoteCreateTests.cells, Quadrant(origin: .remote, operation: .create), 36, 36),
+        ("LocalMove", LocalMoveTests.cells, Quadrant(origin: .local, operation: .move), 48, 48),
+        ("RemoteMove", RemoteMoveTests.cells, Quadrant(origin: .remote, operation: .move), 60, 60),
+        ("LocalCreate", LocalCreateTests.cells, Quadrant(origin: .local, operation: .create), 30, 30),
+        ("RemoteCreate", RemoteCreateTests.cells, Quadrant(origin: .remote, operation: .create), 42, 42),
         ("LocalContentUpdate", LocalContentUpdateTests.cells, Quadrant(origin: .local, operation: .contentUpdate), 8, 8),
         ("RemoteContentUpdate", RemoteContentUpdateTests.cells, Quadrant(origin: .remote, operation: .contentUpdate), 24, 22),
         ("ConcurrentDelete", ConcurrentDeleteTests.cells, Quadrant(origin: .concurrent, operation: .delete), 52, 40),
@@ -206,8 +206,8 @@ struct ScenarioSelectionTests {
             print("  unbuildable: \(count) cell\(count == 1 ? "" : "s") ask for \(reason)")
         }
 
-        #expect(excluded == all.count - 350, """
-        \(excluded) of the \(all.count) cells of phase A cannot be built, against 56 when this was written. The breakdown is printed above; a change here is either a primitive gained or coverage lost.
+        #expect(excluded == all.count - 410, """
+        \(excluded) of the \(all.count) cells of phase A cannot be built, against 56 when this was written — a number which did not move when the matrix grew by sixty, because every one of those sixty is buildable. The breakdown is printed above; a change here is either a primitive gained or coverage lost.
         """)
 
         #expect(!counts.keys.contains { $0.hasPrefix("a container which is not standard") }, """

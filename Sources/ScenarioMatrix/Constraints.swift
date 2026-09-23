@@ -128,18 +128,20 @@ public enum Constraints {
     ///
     /// This is what makes ``Realization/parent(_:)`` and ``Realization/parents(source:destination:)`` narrower than the menu ``realizationLevels(for:subject:)`` returns, and it is the reason ``Generator`` carries no live branch for a `create` into an unknown parent.
     ///
+    /// Both rules exclude, and this excludes rather than admits. It used to be written the other way — `level == .materialized` at the root — which also dropped `materializedDeep`, a level neither rule mentions and which is not degenerate at the root at all: the root holds at least the item under test, so a root whose children have been fetched differs from one which has merely been enumerated. The model already says as much elsewhere, emitting `item:materializedDeep` at the root without hesitation. Sixty rows of phase A were pruned by a whitelist for a reason nothing here states, and because they were never generated they were not even counted among the cells the harness cannot yet build — an absence with nothing to notice it.
+    ///
     /// - Parameters:
     ///     - level: The state the container is in before the operation is performed.
     ///     - location: How deep the container sits within the domain.
     ///
-    /// - Returns: `true` when the precondition is one the harness can actually put the container into.
+    /// - Returns: `true` unless the level is one this location makes degenerate.
     ///
     public static func isLegal(containerRealization level: RealizationLevel, location: Location) -> Bool {
-        if location == .root {
-            return level == .materialized
+        guard location == .root else {
+            return level != .unknown
         }
 
-        return level != .unknown
+        return level != .unknown && level != .dataless
     }
 
     // MARK: - Item shape
@@ -198,7 +200,11 @@ public enum Constraints {
     ///
     /// An effective-pinned item is, in steady state, materialized. Pinned-and-dataless is a *transient* state during the apply-pin → materialize transition, not a precondition a test can sit on, so it is not a matrix cell.
     ///
-    /// Every level a ``Realization`` mentions is checked, which is what makes a `move` between two containers of differing state answer honestly: a pinned cell survives only if both ends hold content. ``RealizationLevel/unknown`` is permitted because pinning says nothing about a container the framework has not seen.
+    /// The argument is about the **item**, so it is applied to the item and not to the containers around it. ``Realization/item(_:)`` describes what is pinned; ``Realization/parent(_:)`` and ``Realization/parents(source:destination:)`` describe folders the item is created into or moved between, and a dataless destination folder is not a moment in any pin transition — it is, in this model's own words, the state every depth-one container is in at t=0.
+    ///
+    /// Folding every level through one test said otherwise, and what it removed is the case worth having: moving an item the user has asked to keep downloaded into a folder they have never opened, where the client must both preserve the pin and fetch eagerly into a container it has not enumerated. There was no such row in any phase. The exception is ``ContentPolicy/pinnedInherited``, where the container *is* what carries the pin, so it holding content is part of the precondition rather than incidental to it.
+    ///
+    /// ``RealizationLevel/unknown`` is permitted throughout, because pinning says nothing about a container the framework has not seen.
     ///
     /// - Parameters:
     ///     - policy: The pin state under test, effective-pinned or not per ``ContentPolicy/isEffectivelyPinned``.
@@ -211,7 +217,17 @@ public enum Constraints {
             return true
         }
 
-        return realization.levels.allSatisfy { $0.hasContent || $0 == .unknown }
+        // The pin is carried by the container, so the container's own state is part of what is being asserted.
+        guard policy != .pinnedInherited else {
+            return realization.levels.allSatisfy { $0.hasContent || $0 == .unknown }
+        }
+
+        guard case let .item(level) = realization else {
+            // A container's state says nothing about whether the item in it can be pinned.
+            return true
+        }
+
+        return level.hasContent || level == .unknown
     }
 
     ///
