@@ -100,11 +100,13 @@ enum ScenarioSelection {
 
                 case .evicted:
                     // Established by fetching and dropping the content. The two states remain indistinguishable to a test process — the same flag, size and zero blocks — so the cell runs and the distinction alone is declined, rather than the cell being dropped for a clause it cannot judge.
-                    guard subject != .file else {
+                    //
+                    // A folder with children and a package are established the same way, one level down: the children are fetched and the folder is evicted. That was refused as impossible until a probe measured it on 2026-09-23 — the system accepts the eviction, and the children come back with no allocated blocks while the folder's own flag never moves. Thirty-eight cells were excluded on a claim nobody had tested.
+                    guard subject == .folderEmpty else {
                         continue
                     }
 
-                    return "an evicted \(noun): eviction drops content which has been fetched, and only a file has content of its own to drop"
+                    return "an evicted empty folder: it holds nothing to drop, so the state after evicting it is indistinguishable from a materialized one, and a cell asserting the difference could not fail"
 
                 case .materializedDeep:
                     // One level down, child by child, which is the only way there is: asking the system to download a directory materializes its immediate children and stops. The model emits this level only where it differs from a shallow one.

@@ -191,7 +191,7 @@ struct CleanRoom {
             try await DesktopClient.provisionAccount(account, timeout: environment.scaled(.seconds(60)))
             try await DesktopClient.launch(ClientLaunchConfiguration())
 
-            let domain = try await waitForDomain(besides: knownDomains, ledger: ledger, timeout: environment.scaled(.seconds(120)))
+            let domain = try await waitForDomain(of: user, besides: knownDomains, ledger: ledger, timeout: environment.scaled(.seconds(120)))
 
             manifest.domainPath = domain.path(percentEncoded: false)
             try? manifest.write(into: Self.roomDirectory(of: user.identifier, in: environment))
@@ -224,7 +224,14 @@ struct CleanRoom {
     ///
     /// Racing the two is what turns a two-minute timeout into an immediate, explained failure. The client reports a refusal within a second of being asked, and that sentence is far more useful than the observation that nothing appeared.
     ///
+    /// The domain is identified by the account it belongs to, not by being new. It used to be "the first directory which was not here a moment ago", and that is a different thing: a directory which is *renamed* is also not here a moment ago.
+    ///
+    /// Measured on 2026-09-23. A room left its domain directory behind at teardown, because the client had local files in it which it had refused to upload. The next room started, the system reaped the orphan by renaming it to `… (23.09.26 15:49)`, and that rename produced a path which passed the novelty test and sorted ahead of the room's own. The room bound to its predecessor's corpse: its reads went to the old directory while its writes went to the real domain, so the item it had just created never "arrived", and the wait reported a container holding a name from the previous cell. Every failure it produced was about the wrong directory.
+    ///
+    /// A domain directory ends with the account's user name, and a bounced one does not — the suffix goes on the end. Matching on that is exact, and the novelty check is kept underneath it so that a room can still never bind to a domain which was standing before it asked for one.
+    ///
     /// - Parameters:
+    ///     - user: The account whose domain this is.
     ///     - known: The domain directories which existed before the account was configured.
     ///     - ledger: The ledger to record the confirming enumeration in.
     ///     - timeout: How long to wait.
@@ -233,20 +240,41 @@ struct CleanRoom {
     ///
     /// - Throws: ``CleanRoomError/accountSetupFailed(reason:)`` if the client gives up, or ``WaitTimeoutError`` if nothing happens at all.
     ///
-    static func waitForDomain(besides known: [URL], ledger: EnumerationLedger, timeout: Duration) async throws -> URL {
+    static func waitForDomain(of user: TestUser, besides known: [URL], ledger: EnumerationLedger, timeout: Duration) async throws -> URL {
         let knownPaths = Set(known.map { $0.standardizedFileURL.path(percentEncoded: false) })
 
-        let domain = try await Waiter.waitForValue("the account's File Provider domain appears", timeout: timeout) {
+        let domain = try await Waiter.waitForValue("the File Provider domain of \(user.identifier) appears", timeout: timeout) {
             if let failure = ClientLog.accountSetupFailure() {
                 throw CleanRoomError.accountSetupFailed(reason: failure)
             }
 
-            return DomainLocator.mountedDomains().first { !knownPaths.contains($0.standardizedFileURL.path(percentEncoded: false)) }
+            return DomainLocator.mountedDomains().first { candidate in
+                guard !knownPaths.contains(candidate.standardizedFileURL.path(percentEncoded: false)) else {
+                    return false
+                }
+
+                return isDomain(candidate, of: user.identifier)
+            }
         }
 
         try await DomainLocator.confirmReadable(domain, ledger: ledger, timeout: timeout)
 
         return domain
+    }
+
+    ///
+    /// Whether a domain directory belongs to an account.
+    ///
+    /// The client names a domain directory for the server and the account, in that order, so the account's user name is the end of it. A directory the system has had to disambiguate carries a suffix after that, which is exactly what this has to reject.
+    ///
+    /// - Parameters:
+    ///     - directory: The candidate.
+    ///     - identifier: The account's user name.
+    ///
+    /// - Returns: `true` if the directory is that account's domain and not a renamed remnant of anything.
+    ///
+    static func isDomain(_ directory: URL, of identifier: String) -> Bool {
+        directory.lastPathComponent.hasSuffix("-\(identifier)")
     }
 
     ///

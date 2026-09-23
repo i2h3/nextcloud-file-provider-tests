@@ -663,8 +663,37 @@ enum ScenarioWorld {
 
             case .evicted:
                 // Fetched, then dropped. The model keeps this apart from `dataless` because the item's history differs — it has been through the provider once and takes a re-fetch path rather than a first-fetch path, which it calls a bug magnet — even though the file system shows the same three numbers for both afterwards.
+                //
+                // A directory can be evicted too, which this refused for a year on the reasoning that "eviction applies to content and a directory has none of its own". Measured on 2026-09-23: the system accepts `evictUbiquitousItem` on a folder, and afterwards the folder itself reads as **not** dataless while its fetched children read as dataless with no allocated blocks. So the content really is dropped, the state is establishable, and the flag to read it by is on the children rather than on the folder — which is why asking the folder would have reported the eviction as having failed.
+                //
+                // An empty folder is the exception and stays refused. There is nothing inside it to drop, so evicting it changes nothing observable and the state it claims is indistinguishable from `materialized` — a cell which cannot fail, which is the one thing this suite will not run.
+                guard kind != .folderEmpty else {
+                    throw ScenarioWorldError.unsupported("an evicted empty folder, because it holds nothing to drop and the state would be indistinguishable from a materialized one")
+                }
+
                 guard kind == .file else {
-                    throw ScenarioWorldError.unsupported("an evicted \(kind.rawValue), because eviction applies to content and a directory has none of its own")
+                    // Entered first, so that the children exist to be fetched, and then fetched one level down — the same depth `materializedDeep` reaches, because it is the only depth the system offers.
+                    for child in try room.localChildren(of: path) where child.kind == .file {
+                        _ = try Materialization.materialize(room.localURL(of: "\(path)/\(child.name)"))
+                    }
+
+                    guard Materialization.evict(url) else {
+                        throw ScenarioWorldError.unsupported("an evicted \(kind.rawValue), because the system would not accept the eviction it was asked for")
+                    }
+
+                    // Read on the children, for the reason above. The folder keeps its own flag clear either way, so waiting on it would wait forever.
+                    try await Waiter.waitUntilBlocking(
+                        "the children of \"\(url.lastPathComponent)\" settle as evicted",
+                        timeout: LiveEnvironment.scaled(.seconds(60)),
+                        diagnosis: { describe(path, in: room) }
+                    ) {
+                        try room.localChildren(of: path)
+                            .filter { $0.kind == .file }
+                            .allSatisfy { $0.allocatedBlocks == 0 }
+                    }
+
+                    // Entered, and it had to be: the children cannot be fetched without listing them first.
+                    return true
                 }
 
                 _ = try Materialization.materialize(url)
@@ -756,6 +785,17 @@ enum ScenarioWorld {
         guard scenario.item.kind == .file else {
             // For a directory the only honest statement is what this test did to it, and the ledger is the record of that.
             #expect(room.ledger.hasEnumerated(url) == wasEnumerated, "The record of whether this directory was entered does not match what the precondition asked for.")
+
+            // The mirror of `materializedDeep`, and read the same way. The folder's own flag says nothing — measured: it stays clear through an eviction the system accepted — so both levels are confirmed on what the children hold.
+            if level == .evicted {
+                for child in try room.localChildren(of: path) where child.kind == .file {
+                    #expect(child.allocatedBlocks == 0, "\"\(child.name)\" still holds content, so the folder was not evicted.")
+                }
+
+                ScenarioOracle.decline("realizationState", because: ScenarioOracle.evictedItemReason)
+
+                return nil
+            }
 
             guard level == .materializedDeep else {
                 return nil
