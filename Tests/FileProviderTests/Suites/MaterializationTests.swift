@@ -146,4 +146,68 @@ struct MaterializationTests {
             }
         }
     }
+
+    ///
+    /// Whether a directory can be evicted at all, which decides fifty-six cells.
+    ///
+    /// The matrix asks for `item:evicted` on folders and packages as readily as on files, and the harness refuses all of it: ``ScenarioWorld`` throws "an evicted folder, because eviction applies to content and a directory has none of its own". That is the single largest reason phase A is 350 cells and not 406 — every one of the fifty-six it cannot build asks for exactly this, and none of them asks for the sharing and group folders the remainder was assumed to be waiting on.
+    ///
+    /// The refusal is a claim, and it has never been checked. `FileManager.evictUbiquitousItem(at:)` is not documented as file-only, `SF_DATALESS` on a directory encodes whether its contents have been fetched — this suite's own oracle says so — and a package is presented to the system as a single item, which is the whole reason packages are not excluded elsewhere. So one of three things is true, and a run settles which: the system refuses, and the exclusion is right for a reason worth writing down; or it accepts and the directory reports itself dataless, and fifty-six cells are buildable; or it accepts and nothing changes, which is the worst of the three and the one silently assuming either answer would hide.
+    ///
+    /// Recorded rather than asserted, deliberately. There is no contract here that says what must happen, so a cell demanding either answer would be this suite inventing one — and this is the second time that matters in this file, after a zero-byte file turned out to keep its dataless flag because there was nothing to fetch.
+    ///
+    @Test(arguments: LiveEnvironment.servers)
+    func `Whether a directory can be evicted is recorded rather than assumed.`(_ underTest: ServerUnderTest) async throws {
+        try await CleanRoom.with(underTest, testName: "Materialization.directoryEviction") { room in
+            let folder = "evictable"
+            let child = "inside.bin"
+
+            try await room.server.createDirectory("/\(folder)")
+            _ = try await room.waitForRemoteEntry(named: folder)
+
+            try await ServerWorkspace.withFixture(named: child, size: 64 * 1024, seed: 37) { source, _ in
+                try await room.server.upload(source, to: "/\(folder)", force: true)
+            }
+
+            _ = try await room.waitForRemoteEntry(named: child, in: "/\(folder)")
+
+            let url = room.localURL(of: folder)
+
+            try await Waiter.waitUntilBlocking("\"\(folder)\" reaches the client", timeout: LiveEnvironment.scaled(.seconds(180))) {
+                try room.localChildren().contains { $0.name == folder && $0.kind == .directory }
+            }
+
+            // Fetched first, because evicting something which was never materialized would answer a different question.
+            let childURL = url.appending(path: child, directoryHint: .notDirectory)
+
+            try await Waiter.waitUntilBlocking("\"\(child)\" reaches the client", timeout: LiveEnvironment.scaled(.seconds(180))) {
+                try room.localChildren(of: folder).contains { $0.name == child }
+            }
+
+            _ = try Materialization.materialize(childURL)
+
+            let fetched = try #require(try LocalNode.at(childURL))
+
+            #expect(!fetched.isDataless, "The child did not materialize, so this trial cannot say anything about evicting its folder.")
+
+            let accepted = Materialization.evict(url)
+
+            guard accepted else {
+                ScenarioOracle.observe("""
+                the system refused to evict the folder "\(folder)", so `item:evicted` on a directory is not a state this harness can establish and the fifty-six cells asking for it stay unbuildable for a reason rather than an assumption
+                """, in: room)
+
+                return
+            }
+
+            // Accepted is not the same as done. What matters is what the folder and its child report afterwards, and only one of the two would make those cells buildable.
+            let folderNode = try #require(try LocalNode.at(url))
+            let childNode = try #require(try LocalNode.at(childURL))
+
+            ScenarioOracle.observe("""
+            the system accepted evicting the folder "\(folder)": afterwards the folder reads as \(folderNode.isDataless ? "dataless" : "not dataless") and its fetched child as \(childNode.isDataless ? "dataless, so the content really was dropped" : "still materialized, so the call was accepted and changed nothing"). \
+            \(folderNode.isDataless || childNode.isDataless ? "The state can be established, and the fifty-six cells excluded for it are excluded wrongly." : "The state cannot be confirmed, which is the answer that would have been hidden by assuming either of the other two.")
+            """, in: room)
+        }
+    }
 }

@@ -179,4 +179,39 @@ struct ScenarioSelectionTests {
         \(quadrant.name) runs a different set of cells from what the shared filter selects, which means the suite has its own filter and the two can drift apart.
         """)
     }
+
+    ///
+    /// Why each cell this harness cannot run is one it cannot run, counted by cause.
+    ///
+    /// The total alone is a number nobody can act on. It was carried for weeks as "sharing and group folders", which phase A does not offer at all — every placement it emits is a standard container — so the real reasons went unexamined until something made them print themselves. Counted by cause, the remainder stops being a backlog and becomes a list: each line is one primitive, and building it moves a number here.
+    ///
+    /// Printed as well as asserted, because the breakdown is the useful half and a test which only compares totals says nothing about what changed.
+    ///
+    @Test
+    func `Every cell the harness cannot run names the reason, and the reasons are counted.`() {
+        let all = Generator.matrix(for: .a).values.flatMap(\.self)
+        var counts = [String: Int]()
+
+        for scenario in all {
+            guard let blocker = ScenarioSelection.blocker(for: scenario) else {
+                continue
+            }
+
+            counts[blocker, default: 0] += 1
+        }
+
+        let excluded = counts.values.reduce(0, +)
+
+        for (reason, count) in counts.sorted(by: { $0.value > $1.value }) {
+            print("  unbuildable: \(count) cell\(count == 1 ? "" : "s") ask for \(reason)")
+        }
+
+        #expect(excluded == all.count - 350, """
+        \(excluded) of the \(all.count) cells of phase A cannot be built, against 56 when this was written. The breakdown is printed above; a change here is either a primitive gained or coverage lost.
+        """)
+
+        #expect(!counts.keys.contains { $0.hasPrefix("a container which is not standard") }, """
+        A cell was excluded for its container type, which phase A cannot emit: every placement it offers is a standard container. Either the model changed or this filter is now describing something else.
+        """)
+    }
 }

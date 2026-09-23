@@ -44,6 +44,30 @@ struct ConflictTests {
     }
 
     ///
+    /// Put a plain directory on the server and wait for the client to show it.
+    ///
+    /// A directory inside the domain, which is what the sync-control contract is about. The domain root is not one: it is the provider's mount point, and asking it about an item's sync controls asks about no item at all — so an expectation that it carries no such controls holds whatever the client does, which is the shape of an expectation that cannot fail.
+    ///
+    /// - Parameters:
+    ///     - room: The room to work in.
+    ///     - name: The name to give it.
+    ///
+    /// - Returns: Its location on disk.
+    ///
+    /// - Throws: Whatever creating or waiting raises.
+    ///
+    private func makeDirectory(in room: CleanRoom, named name: String) async throws -> URL {
+        try await room.server.createDirectory("/\(name)")
+        _ = try await room.waitForRemoteEntry(named: name)
+
+        try await Waiter.waitUntilBlocking("\"\(name)\" appears in the client", timeout: LiveEnvironment.scaled(.seconds(180))) {
+            try room.localChildren().contains { $0.name == name && $0.kind == .directory }
+        }
+
+        return room.localURL(of: name)
+    }
+
+    ///
     /// Whether the client says it can be asked to detect conflicts at all.
     ///
     /// Worth asserting rather than assuming. A provider which handles the conflict error but never advertises the capability has written code no application is permitted to reach, and an application checking this key would conclude the flow is unavailable and never use it.
@@ -72,7 +96,9 @@ struct ConflictTests {
             // The other half of the contract, and the reason a puzzling `featureUnsupported` is worth recognising on sight: a regular, non-package directory is excluded from this family outright. A bundle is not, because the system presents one as a single item.
             //
             // Asserted on the raw optional. Asking `supportsPausing(directory) == false` would have passed identically whether the key said no or could not be read, which makes it an expectation nothing can falsify.
-            let directory = room.localURL(of: "")
+            //
+            // And asked of a directory inside the domain rather than of the domain root, which is what it used to be. The root is the mount point, not an item the provider serves, so it carries no item's keys whatever the client does — the expectation below held for a reason that had nothing to do with the contract it names, and a client which started advertising sync controls on directories would not have moved it.
+            let directory = try await makeDirectory(in: room, named: "plain-directory")
 
             #expect(SyncControl.supportedControls(of: directory) == nil, """
             A regular directory carries the sync-control key, but pausing one is documented to be refused with `CocoaError.featureUnsupported`. An application reading this key would attempt something that cannot work.

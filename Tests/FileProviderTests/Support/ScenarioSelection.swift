@@ -48,17 +48,31 @@ enum ScenarioSelection {
     /// - Returns: `true` if it can be run today.
     ///
     static func isBuildable(_ scenario: Scenario) -> Bool {
+        blocker(for: scenario) == nil
+    }
+
+    ///
+    /// Why this harness cannot build the world a cell describes, if it cannot.
+    ///
+    /// The reason, not just the fact. A count of excluded cells is a number nobody can act on and nobody can check: fifty-six cells were carried for weeks as "sharing and group folders", which phase A does not even offer, and the actual reasons turned out to be different ones entirely. Naming each blocker makes the exclusions countable by cause, which is what turns "coverage is 350 of 406" into a list of things to build.
+    ///
+    /// - Parameters:
+    ///     - scenario: The cell.
+    ///
+    /// - Returns: A sentence reading after "this harness cannot build", or `nil` if it can.
+    ///
+    static func blocker(for scenario: Scenario) -> String? {
         // A pin can be neither set nor read from a test process, so a cell asking for one cannot be established.
         guard scenario.contentPolicy == .default else {
-            return false
+            return "a content policy of \(scenario.contentPolicy.rawValue): a pin can be neither set nor read from a test process"
         }
 
         // Sharing and group folders need provisioning through OCS and the groupfolders application, neither of which this harness speaks.
         guard scenario.site.placements.allSatisfy({ $0.container.type == .standard }) else {
-            return false
+            return "a container which is not standard: sharing and group folders need OCS provisioning and the groupfolders application, neither of which this harness speaks"
         }
 
-        return isBuildable(scenario.realization, kind: scenario.item.kind)
+        return blocker(for: scenario.realization, kind: scenario.item.kind)
     }
 
     ///
@@ -72,29 +86,40 @@ enum ScenarioSelection {
     ///     - realization: What the cell asks for.
     ///     - kind: What sort of item it is.
     ///
-    /// - Returns: `true` if the state can be established and confirmed.
+    /// - Returns: A sentence naming the level which cannot be established, or `nil` if every level can.
     ///
-    private static func isBuildable(_ realization: Realization, kind: ItemKind) -> Bool {
+    private static func blocker(for realization: Realization, kind: ItemKind) -> String? {
         // A container level is a statement about a folder which holds the item, so it is judged as one.
         let subject: ItemKind = realization.isAboutParents ? .folderWithChildren : kind
+        let noun = realization.isAboutParents ? "container" : subject.rawValue
 
-        return realization.levels.allSatisfy { level in
+        for level in realization.levels {
             switch level {
                 case .dataless, .materialized:
-                    true
+                    continue
 
                 case .evicted:
                     // Established by fetching and dropping the content. The two states remain indistinguishable to a test process — the same flag, size and zero blocks — so the cell runs and the distinction alone is declined, rather than the cell being dropped for a clause it cannot judge.
-                    subject == .file
+                    guard subject != .file else {
+                        continue
+                    }
+
+                    return "an evicted \(noun): eviction drops content which has been fetched, and only a file has content of its own to drop"
 
                 case .materializedDeep:
                     // One level down, child by child, which is the only way there is: asking the system to download a directory materializes its immediate children and stops. The model emits this level only where it differs from a shallow one.
-                    subject == .folderWithChildren
+                    guard subject != .folderWithChildren else {
+                        continue
+                    }
+
+                    return "a deeply materialized \(noun): the level describes a folder's children being fetched, and this has none to fetch"
 
                 case .unknown:
                     // Every container a cell can place sits under the domain root, which is enumerated once while the room is built. A subdirectory container is therefore dataless at the start of a test and never unknown.
-                    false
+                    return "a \(noun) at an unknown level: every container a cell can place sits under the domain root, which is enumerated as the room is built, so it is dataless from the start and never unknown"
             }
         }
+
+        return nil
     }
 }
