@@ -24,9 +24,11 @@ enum ExtensionDefaultState: Equatable, Sendable {
     case off
 
     ///
-    /// The switch could not be read, so nothing is known about it.
+    /// The switch could not be read, so nothing is known about it, and what `defaults` said instead.
     ///
     /// Distinct from ``off`` because acting on it is different: a caller confirming that it cleared something has not confirmed anything, and a caller merely asking whether a machine is blocked can reasonably carry on.
     ///
-    case unreadable
+    /// It carries the complaint because the first time this fired nobody could say why. The harness had the answer — an exit status and two streams — and reported only that something had gone wrong, which is the same defect as a timeout naming what did not appear and not what was there. Whatever comes back here belongs in the message a person reads.
+    ///
+    case unreadable(String)
 }

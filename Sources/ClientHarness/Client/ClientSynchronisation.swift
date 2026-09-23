@@ -37,18 +37,38 @@ public enum ClientSynchronisation {
     /// - Throws: ``ClientSynchronisationError/notUnblocked`` if the client is still blocked afterwards, or ``ClientSynchronisationError/blockStateUnreadable`` if that could not be determined.
     ///
     public static func unblock() async throws {
-        switch await ExtensionDefaults.clear(key) {
-            case .off:
-                return
+        var detail = "it could not be read at all"
+        let deadline = ContinuousClock.now + confirmationWindow
 
-            case .on:
-                throw ClientSynchronisationError.notUnblocked
+        while true {
+            switch await ExtensionDefaults.clear(key) {
+                case .off:
+                    return
 
-            case .unreadable:
-                // The state that used to be success. Reading the switch back is the whole of this method's confirmation, and a read which could not happen confirmed nothing while returning `false` for "is it on" — so a machine whose defaults are unreadable left every room believing it had unblocked a client it had not.
-                throw ClientSynchronisationError.blockStateUnreadable
+                case .on:
+                    throw ClientSynchronisationError.notUnblocked
+
+                case let .unreadable(said):
+                    // The state that used to be success. Reading the switch back is the whole of this method's confirmation, and a read which could not happen confirmed nothing while returning `false` for "is it on" — so a machine whose defaults are unreadable left every room believing it had unblocked a client it had not.
+                    //
+                    // Retried rather than raised at once, because this runs immediately after the client has been told to quit and the first time it fired it was gone by the time anyone looked. The preferences of a sandboxed extension are served by a daemon which is tearing that container down at exactly this moment, and a refusal during a teardown is not the same as a refusal by policy. Retrying an assertion would be dishonest; this is not one — it is the harness putting the machine into a known state before any measurement is taken.
+                    detail = said
+            }
+
+            guard ContinuousClock.now < deadline else {
+                throw ClientSynchronisationError.blockStateUnreadable(detail)
+            }
+
+            try await Task.sleep(for: .milliseconds(250))
         }
     }
+
+    ///
+    /// How long unblocking keeps trying to confirm itself before giving up.
+    ///
+    /// Long enough to outlast a preferences daemon releasing a container it has just been asked to tear down, short enough that a machine genuinely missing the grant says so while somebody is still watching.
+    ///
+    public static let confirmationWindow = Duration.seconds(10)
 
     ///
     /// Whether the client is currently blocked from synchronising.

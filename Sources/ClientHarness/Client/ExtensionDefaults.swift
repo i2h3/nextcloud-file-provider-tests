@@ -72,15 +72,48 @@ enum ExtensionDefaults {
     /// - Returns: The state.
     ///
     static func state(of key: String) async -> ExtensionDefaultState {
-        guard let result = try? await ProcessRunner.run(executable, arguments: ["read", ClientPaths.fileProviderExtensionBundleIdentifier, key]) else {
-            return .unreadable
+        let result: ProcessResult
+
+        do {
+            result = try await ProcessRunner.run(executable, arguments: ["read", ClientPaths.fileProviderExtensionBundleIdentifier, key])
+        } catch {
+            return .unreadable("the defaults tool could not be run: \(error)")
         }
 
         guard result.isSuccess else {
-            return isAbsence(result.standardError) ? .off : .unreadable
+            guard isAbsence(result.standardError) else {
+                return .unreadable("""
+                `defaults read \(ClientPaths.fileProviderExtensionBundleIdentifier) \(key)` exited \(result.exitCode) saying \(quoted(result.standardError, or: result.standardOutput))
+                """)
+            }
+
+            return .off
         }
 
         return result.standardOutput.trimmingCharacters(in: .whitespacesAndNewlines) == "1" ? .on : .off
+    }
+
+    ///
+    /// What a command said, for a message, or that it said nothing.
+    ///
+    /// Both streams, because which one carries a complaint is the tool's business and an empty message is the one answer nobody can act on.
+    ///
+    /// - Parameters:
+    ///     - message: What it wrote to standard error.
+    ///     - fallback: What it wrote to standard output.
+    ///
+    /// - Returns: The text, quoted, or a statement that there was none.
+    ///
+    static func quoted(_ message: String, or fallback: String) -> String {
+        let trimmed = message.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        guard trimmed.isEmpty else {
+            return "\"\(trimmed)\""
+        }
+
+        let alternative = fallback.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        return alternative.isEmpty ? "nothing at all" : "\"\(alternative)\" on its output"
     }
 
     ///

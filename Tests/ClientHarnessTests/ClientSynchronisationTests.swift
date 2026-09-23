@@ -88,6 +88,22 @@ struct ClientSynchronisationTests {
     ///
     @Test
     func `A machine with no extension domain reads the switch as off rather than unreadable.`() async {
-        #expect(await ExtensionDefaults.state(of: ClientSynchronisation.key) != .unreadable)
+        guard case let .unreadable(said) = await ExtensionDefaults.state(of: ClientSynchronisation.key) else {
+            return
+        }
+
+        Issue.record("""
+        Reading the switch on this machine could not say whether it is set, which on a machine where the extension has never run should read as absent. What it said: \(said)
+        """)
+    }
+
+    ///
+    /// An unreadable state carries what the tool complained about, because the first time this fired it did not and nobody could say why.
+    ///
+    @Test
+    func `A state which could not be read says what was said instead.`() {
+        #expect(ExtensionDefaults.quoted("Error: Domain 'x' not found.", or: "") == "\"Error: Domain 'x' not found.\"")
+        #expect(ExtensionDefaults.quoted("  ", or: "something on stdout") == "\"something on stdout\" on its output")
+        #expect(ExtensionDefaults.quoted("", or: "") == "nothing at all")
     }
 }

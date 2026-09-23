@@ -19,7 +19,7 @@ public enum ClientSynchronisationError: Error, Equatable, CustomStringConvertibl
     ///
     /// Distinct from ``notUnblocked`` because the machine is in an unknown state rather than a known bad one, and because the fix is different: this one is a grant, not a stray value. It used to be indistinguishable from success — a read which could not happen counted as the switch being absent, so unblocking confirmed itself by failing to look.
     ///
-    case blockStateUnreadable
+    case blockStateUnreadable(String)
 
     // MARK: - CustomStringConvertible
 
@@ -31,8 +31,8 @@ public enum ClientSynchronisationError: Error, Equatable, CustomStringConvertibl
             case .notUnblocked:
                 "The desktop client is still blocked from synchronising. Remove the value by hand with `defaults delete \(ClientPaths.fileProviderExtensionBundleIdentifier) \(ClientSynchronisation.key)`, or every later test will time out."
 
-            case .blockStateUnreadable:
-                "Whether the desktop client is blocked from synchronising could not be read, so unblocking it could not be confirmed. Check with `defaults read \(ClientPaths.fileProviderExtensionBundleIdentifier) \(ClientSynchronisation.key)`; if that is refused rather than empty, this machine is missing the grant macOS 27 requires for the client's application data, and every later test would have timed out with nothing to say why."
+            case let .blockStateUnreadable(detail):
+                "Whether the desktop client is blocked from synchronising could not be read, so unblocking it could not be confirmed, and it was retried for \(ClientSynchronisation.confirmationWindow) before giving up. \(detail). If that reads as a refusal rather than an absence, this machine is missing the grant macOS 27 requires for the client's application data, and every later test would have timed out with nothing to say why."
         }
     }
 }
