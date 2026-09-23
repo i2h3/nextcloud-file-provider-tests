@@ -44,9 +44,10 @@ public enum RunIndex {
         html += summary(rooms: rooms, failures: evidence.failures, quadrants: quadrants, samples: samples)
 
         for (quadrant, members) in quadrants.sorted(by: { $0.key < $1.key }) {
-            html += section(quadrant, rooms: members, failures: failuresByRoom, samples: samples, observations: seen)
+            html += section(quadrant, rooms: members, failures: failuresByRoom, samples: samples, observations: seen.byRoom)
         }
 
+        html += notJudged(seen.run)
         html += unattributed(evidence.failures, attributed: failuresByRoom)
         html += footer(evidence)
 
@@ -220,6 +221,8 @@ public enum RunIndex {
         a:hover { text-decoration: underline; }
         .why { color: var(--dim); font-size: 12.5px; margin: .2rem 0 0; }
         .saw { color: var(--dim); font-size: 12.5px; margin: .2rem 0 0; padding-left: .75rem; border-left: 2px solid var(--line); }
+        .declines { color: var(--dim); font-size: 13.5px; margin: .4rem 0 0; padding-left: 1.1rem; }
+        .declines li { margin: .3rem 0; }
         tr.failed td { background: color-mix(in srgb, var(--fail) 8%, transparent); }
         @media (max-width: 600px) { body { padding: 1rem .75rem 3rem; } .facts th { width: auto; } }
         </style></head><body><main>
@@ -356,27 +359,58 @@ public enum RunIndex {
     /// - Parameters:
     ///     - directory: The run's directory.
     ///
-    /// - Returns: The observations, by the clean room they were made in.
+    /// - Returns: The observations of each clean room, and the ones belonging to the run rather than to any one cell.
     ///
-    static func observations(in directory: URL) -> [String: [Observation]] {
+    static func observations(in directory: URL) -> (byRoom: [String: [Observation]], run: [Observation]) {
         let attachments = directory.appending(path: "attachments", directoryHint: .isDirectory)
         let decoder = JSONDecoder()
 
         guard let entries = try? FileManager.default.contentsOfDirectory(at: attachments, includingPropertiesForKeys: nil) else {
-            return [:]
+            return ([:], [])
         }
 
-        var found = [String: [Observation]]()
+        var byRoom = [String: [Observation]]()
+        var run = [Observation]()
 
         for entry in entries where entry.lastPathComponent.hasSuffix(Observation.attachmentSuffix) {
             guard let data = try? Data(contentsOf: entry), let observation = try? decoder.decode(Observation.self, from: data) else {
                 continue
             }
 
-            found[observation.user, default: []].append(observation)
+            guard let user = observation.user else {
+                run.append(observation)
+
+                continue
+            }
+
+            byRoom[user, default: []].append(observation)
         }
 
-        return found.mapValues { $0.sorted { $0.recordedAt < $1.recordedAt } }
+        return (byRoom.mapValues { $0.sorted { $0.recordedAt < $1.recordedAt } }, run.sorted { $0.text < $1.text })
+    }
+
+    ///
+    /// What the run said it could not judge.
+    ///
+    /// Given its own block rather than a row, because it is a property of the suite rather than of any cell: the same clause is declined for the same reason everywhere it appears. Shown at all because a clause quietly missing from an evaluation is indistinguishable from one which passed, and this page's whole job is to stop a reader concluding more from a green row than the row supports.
+    ///
+    /// - Parameters:
+    ///     - observations: The run's own observations.
+    ///
+    /// - Returns: The markup, or nothing if the run declined nothing.
+    ///
+    static func notJudged(_ observations: [Observation]) -> String {
+        let declines = observations.filter(\.isDecline)
+
+        guard !declines.isEmpty else {
+            return ""
+        }
+
+        return """
+        <h2>Not judged <span class="pill">\(declines.count)</span></h2>
+        <p class="why">Clauses of the model which this run could not measure. A cell above may have passed without any of these being checked, which is why they are listed rather than left out.</p>
+        <ul class="declines">\(declines.map { "<li>\(escape($0.text))</li>" }.joined())</ul>
+        """
     }
 
     ///

@@ -214,7 +214,18 @@ enum ScenarioOracle {
             return
         }
 
-        print("  not judged: \(oracle) — \(reason.replacingOccurrences(of: "\n", with: " "))")
+        let sentence = "\(oracle) — \(reason.replacingOccurrences(of: "\n", with: " "))"
+
+        print("  not judged: \(sentence)")
+
+        // Attached as well, and attached to the run rather than to a room. The reason is the same in every cell carrying the clause, so this belongs beside the run's totals — and a decline which only reaches the terminal is the one statement a reader most needs and least often has: it is what stands between a green row and the conclusion that everything about that cell was checked.
+        let record = Observation(text: sentence, user: nil, isDecline: true)
+
+        guard let data = try? JSONEncoder().encode(record) else {
+            return
+        }
+
+        Attachment.record(data, named: "run-\(UUID().uuidString.prefix(8))\(Observation.attachmentSuffix)")
     }
 
     ///
