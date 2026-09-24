@@ -211,6 +211,34 @@ The environment the runner passes to the test process, should a run need to be r
 | `FPT_TIMEOUT_SCALE` | Factor applied to every timeout, for slow machines |
 | `FPT_ALLOW_DESTRUCTIVE` | Approves the removal of an existing client configuration up front |
 | `FPT_ALLOW_UNNOTARIZED_CLIENT` | Accepts a client the system policy rejects, such as a development build |
+| `FPT_REPETITIONS` | How many times a characterisation suite repeats each cell. Those suites skip themselves without it |
+
+### Characterisation suites
+
+Two suites measure rather than assert, and they exist because the contract suites found something
+that does not happen every time. A test which fails intermittently tells you a defect is real and
+nothing else; these turn it into a proportion, which is the number a bug report needs and the number
+a fix has to move.
+
+They repeat one cell many times in a single clean room and report how often the thing propagated,
+separating *late* from *lost* — a change which arrives at three minutes is a delay, one which never
+arrives is a divergence the user cannot see, and the two live in different code. They assert almost
+nothing on purpose: a characterisation suite which fails is one nobody runs twice, and the failure is
+already asserted in the contract suite beside it.
+
+```bash
+FPT_REPETITIONS=10 FPT_ALLOW_DESTRUCTIVE=1 swift run tests --tags latest --filter MovePropagationRate
+```
+
+Read every number they produce as a rate *within one session*. Building a clean room costs about
+eighty seconds against a trial's thirty, so the trials share a room, an account and a client which has
+been running for a while — a cell which fails repeatedly may be reporting one bad state rather than
+many independent failures. `DeletionPropagationRateTests` learned that the hard way and says so at
+length.
+
+Each carries its own control. The move suite moves every kind of item into a folder the client has
+opened and into one it has not, holding everything else fixed, so the comparison is inside one run
+rather than across two.
 
 ## Running from Xcode
 
