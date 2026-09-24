@@ -384,6 +384,33 @@ enum ScenarioWorld {
     }
 
     ///
+    /// Whether one name is what the system renamed another to when it could not hold both.
+    ///
+    /// macOS disambiguates by appending a space and a number before the extension: `report.rtfd` becomes `report 2.rtfd`. Matching that is inference rather than evidence — the item's own `before-bounce` attribute is the system saying what it did — so this is only reached when the attribute is absent, and what found the name is recorded either way.
+    ///
+    /// Deliberately strict about the shape. Anything after the number, or a number which is not a number, is a different name rather than a bounce of this one, and treating a stranger's file as the item under test is worse than failing to find it.
+    ///
+    /// - Parameters:
+    ///     - name: The name the item was given.
+    ///     - candidate: A name the container holds.
+    ///
+    /// - Returns: `true` if the candidate is that name, disambiguated.
+    ///
+    static func isBounce(of name: String, named candidate: String) -> Bool {
+        let stem = (name as NSString).deletingPathExtension
+        let suffix = (name as NSString).pathExtension
+        let tail = suffix.isEmpty ? "" : ".\(suffix)"
+
+        guard candidate.hasPrefix("\(stem) "), candidate.hasSuffix(tail) else {
+            return false
+        }
+
+        let middle = candidate.dropFirst(stem.count + 1).dropLast(tail.count)
+
+        return !middle.isEmpty && middle.allSatisfy(\.isNumber)
+    }
+
+    ///
     /// What a container holds, in a form a timeout can be read with.
     ///
     /// Only ever called when a wait has already run out, so the listing it performs costs nothing the cell still needed — and the cell it describes is over either way.
@@ -462,7 +489,20 @@ enum ScenarioWorld {
             ExtendedAttribute.string(of: ExtendedAttribute.beforeBounce, at: room.localURL(of: parentLocalPath.isEmpty ? entry.name : "\(parentLocalPath)/\(entry.name)")) == name
         }) {
             // Recorded rather than asserted, and recorded precisely because both outcomes are legal. Which one a volume produces is a property of the volume, so a cell demanding either would fail on a machine formatted differently — and a cell which quietly accepted both would pass without saying what it saw, which is how an axis stops measuring anything.
-            ScenarioOracle.observe("\"\(name)\" was bounced to \"\(bounced.name)\" because \"\(sibling)\" already held the name", in: room)
+            ScenarioOracle.observe("\"\(name)\" was bounced to \"\(bounced.name)\", which records having been renamed from it, because \"\(sibling)\" already held the name", in: room)
+
+            return bounced.name
+        }
+
+        // The same bounce, recognised by its shape rather than by its record.
+        //
+        // The attribute above is the right way to ask and it is not always answered. Measured on 2026-09-23: four cells arranged a collision, the system bounced the arriving item to `travelling-Sibling 2.rtfd` beside `travelling-sibling.rtfd`, and not one of them carried `before-bounce#PX` where this could read it. The cells then spent three minutes each waiting for a name which was never going to appear, and reported that the item had not reached the client — while it sat in the listing the failure printed, under the name the system had given it.
+        //
+        // So the disambiguation pattern is the fallback: macOS appends a space and a number before the extension. Which route found it is recorded, because the difference matters — an attribute is the system stating what it did, and a pattern is this harness inferring it, and a run which stops being able to tell them apart should say so rather than quietly settle for the weaker one.
+        if let bounced = entries.first(where: { isBounce(of: name, named: $0.name) }) {
+            ScenarioOracle.observe("""
+            "\(name)" was bounced to "\(bounced.name)" because "\(sibling)" already held the name — recognised by the system's disambiguation pattern, because the item carries no `\(ExtendedAttribute.beforeBounce)` attribute saying so
+            """, in: room)
 
             return bounced.name
         }
@@ -470,7 +510,7 @@ enum ScenarioWorld {
         // No bounce: the system held both names after all, which is a legitimate outcome on a case-sensitive volume and worth not mistaking for a failure to arrive.
         guard entries.contains(where: { $0.name == name }) else {
             throw ScenarioWorldError.unsupported("""
-            an item which answers to "\(name)": the container holds \(entries.map(\.name).sorted().joined(separator: ", ")), none of which is that name and none of which records having been renamed from it. Its sibling "\(sibling)" is what it was meant to collide with
+            an item which answers to "\(name)": the container holds \(entries.map(\.name).sorted().joined(separator: ", ")), none of which is that name, none of which records having been renamed from it, and none of which is that name with the number the system appends when it disambiguates. Its sibling "\(sibling)" is what it was meant to collide with
             """)
         }
 
