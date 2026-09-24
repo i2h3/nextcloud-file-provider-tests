@@ -57,7 +57,30 @@ struct RemoteMoveTests {
             try await room.server.move(subject.remotePath, to: destinationRemote, overwrite: false)
 
             // Both paths, and by lookup rather than by listing. Half of these cells forbid entering one of the two containers, so the arrival cannot be observed by enumerating the place it arrives in — and watching only the destination would pass while a copy was left behind at the source.
-            try await Waiter.waitUntilBlocking("the move reaches the client", timeout: LiveEnvironment.scaled(.seconds(180))) {
+            //
+            // The condition is a conjunction, so its failure has two quite different meanings and the timeout used to report neither. "The client never followed the move" and "the client copied instead of moving" are separate defects in separate parts of a provider, and a bug report which cannot say which of them happened is a bug report nobody can act on. Both paths are looked at once more when the wait runs out, and the answer is put in the message.
+            try await Waiter.waitUntilBlocking(
+                "the move reaches the client",
+                timeout: LiveEnvironment.scaled(.seconds(180)),
+                diagnosis: {
+                    let atDestination = (try? LocalNode.at(to)) ?? nil
+                    let atSource = (try? LocalNode.at(from)) ?? nil
+
+                    switch (atDestination == nil, atSource == nil) {
+                        case (true, true):
+                            return "the item at neither path: it has left \"\(subject.localPath(of: name))\" and has not arrived at \"\(destinationLocal)\""
+
+                        case (true, false):
+                            return "the item still at \"\(subject.localPath(of: name))\" and not at \"\(destinationLocal)\", so the client has not followed the move at all"
+
+                        case (false, false):
+                            return "the item at both paths, so what reached the client was a copy and the original was left where it was"
+
+                        case (false, true):
+                            return "the item exactly where it should be, so it arrived between the last poll of this wait and this look"
+                    }
+                }
+            ) {
                 try LocalNode.at(to) != nil && LocalNode.at(from) == nil
             }
 
