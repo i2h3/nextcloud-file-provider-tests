@@ -169,6 +169,9 @@ struct MovePropagationRateTests {
                 print("        trial \(trial) of \(trials): \(outcome)")
             }
 
+            // Taken from the world rather than named here, so that the container this suite looks in cannot drift from the one ``ScenarioWorld`` builds.
+            var destinationContainer: String?
+
             var counts = [Outcome: Int]()
             var dropped = 0
             var latencies = [Duration]()
@@ -195,8 +198,11 @@ struct MovePropagationRateTests {
                     continue
                 }
 
+                // `destinationLocal` is already the item's whole path after the move, name included, which is how ``RemoteMoveTests`` uses it. Joining the name onto it again produced a path one level below where the item lands — `box/trial-1.bin/trial-1.bin` — which cannot exist, so every trial of every cell was counted as lost. Eighty of them, in four and three quarter hours, including the control arm which had moved fifty-six items out of sixty the day before.
+                destinationContainer = subject.destinationLocalPath
+
                 let from = room.localURL(of: subject.localPath(of: name))
-                let to = room.localURL(of: destinationLocal.isEmpty ? name : "\(destinationLocal)/\(name)")
+                let to = room.localURL(of: destinationLocal)
                 let started = ContinuousClock.now
 
                 try await room.server.move(subject.remotePath, to: destinationRemote, overwrite: false)
@@ -220,6 +226,18 @@ struct MovePropagationRateTests {
                 Issue.record("Every trial of \(cell.description) failed to build, so nothing was measured.")
 
                 return
+            }
+
+            // A cell where not one trial arrived is more likely a broken instrument than a client which lost every single move, and this suite asserts so little that a broken instrument otherwise reports itself as a pass. It did: a path built one level too deep scored nought out of eighty, control arm included, and the run ended green.
+            //
+            // Said as an issue rather than swallowed, and said as a doubt about the measurement rather than as a finding about the client — because a genuine total loss is possible and must not be suppressed by the guard against a mistake.
+            if (counts[.moved] ?? 0) == 0, (counts[.late] ?? 0) == 0, (counts[.copied] ?? 0) == 0 {
+                Issue.record("""
+                Not one of \(counted) moves arrived, so this cell measured either a client which loses every move of this shape or a harness which was watching the wrong place. \
+                The destination held \(destinationContainer.map { ScenarioWorld.describe($0, in: room) } ?? "nothing this could look at") when the trials were over. \
+                Read once, here, and never during the trials: listing a container is how it stops being unentered, and half of these cells are about a destination the client has never opened. \
+                Establish which of the two it was before treating the rate below as a finding.
+                """)
             }
 
             report(counts, counted: counted, dropped: dropped, latencies: latencies, lateLatencies: lateLatencies, for: cell, in: room, against: underTest)
