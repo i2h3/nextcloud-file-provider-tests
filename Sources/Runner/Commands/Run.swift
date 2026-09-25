@@ -86,6 +86,11 @@ struct Run: AsyncParsableCommand {
         let artifactsDirectory = URL(filePath: artifacts, directoryHint: .isDirectory).appending(path: Self.runIdentifier(), directoryHint: .isDirectory)
         try FileManager.default.createDirectory(at: artifactsDirectory, withIntermediateDirectories: true)
 
+        // Stamped, because a run takes hours and a terminal keeps several of them. Without this there is no way to tell from a scrollback which run is on the screen, when it started, or whether it has anything left to do — which is the question somebody has when they come back to it, and the one the output could not answer.
+        let began = Date()
+
+        Console.milestone("Run \(artifactsDirectory.lastPathComponent) started.")
+
         let report = await Preflight.checkMachine(allowingUnnotarizedClient: allowDevelopmentClient)
         Console.log(report.description)
 
@@ -114,7 +119,7 @@ struct Run: AsyncParsableCommand {
             }
         }
 
-        let servers = try await ServerMatrix.deploy(tags: tags, includesPush: withPush) { Console.log($0) }
+        let servers = try await ServerMatrix.deploy(tags: tags, includesPush: withPush) { Console.milestone($0) }
 
         // Recorded where `teardown` looks, which until now only `prepare` did.
         //
@@ -126,6 +131,9 @@ struct Run: AsyncParsableCommand {
         try? manifest.write(into: artifactsDirectory)
 
         let result = try await runTests(against: servers.map(\.descriptor), artifactsDirectory: artifactsDirectory)
+
+        Console.log()
+        Console.milestone("Tests finished. Tearing down...")
 
         if !noClientReset {
             try? await DesktopClient.quit()
@@ -147,6 +155,9 @@ struct Run: AsyncParsableCommand {
         Console.log()
         Console.log(summary)
         Console.log()
+        Console.milestone("""
+        Run \(artifactsDirectory.lastPathComponent) finished, having taken \(Console.spoken(Date().timeIntervalSince(began))) since \(Console.timestamp(began)).
+        """)
         Console.log("Artifacts: \(artifactsDirectory.path(percentEncoded: false))")
 
         writeIndex(in: artifactsDirectory)
@@ -306,7 +317,7 @@ struct Run: AsyncParsableCommand {
         }
 
         Console.log()
-        Console.log("Running the tests against \(servers.map(\.description).joined(separator: ", "))...")
+        Console.milestone("Running the tests against \(servers.map(\.description).joined(separator: ", "))...")
 
         return try await ProcessRunner.runStreamingOutput(URL(filePath: "/usr/bin/swift"), arguments: arguments, environment: environment)
     }

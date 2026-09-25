@@ -115,13 +115,19 @@ struct MovePropagationRateTests {
     ///
     /// Drawn from what ``RemoteMoveTests`` runs rather than assembled here, so that a cell this harness stops being able to build disappears from the measurement instead of failing inside it.
     ///
-    /// Narrowed to one axis. The source is materialized, the direction is always from the root into a subdirectory, and the only thing which differs between a subject and its control is whether the client has ever opened the folder the item arrives in. The encodings are left out — the failures spanned a collision, a decomposed name and no encoding at all, so the encoding is not what these are about, and carrying four of them would quadruple a suite whose trials cost half a minute each.
+    /// The axis was chosen wrongly the first time and the run said so, which is what a control is for.
     ///
-    /// Eight cells: four kinds of item, each moved into an opened folder and into an unopened one.
+    /// The first version varied only the destination — opened against unopened — and left the encodings out, on the reasoning that the eight failures which prompted this suite "spanned a collision, a decomposed name and no encoding at all". Six of those eight were a case collision, one a decomposed name and one neither, which is a gradient rather than a spread. And the model emits an encoding **only** on `materialized->dataless`, so every encoded cell already had an unopened destination: the comparison which appeared to indict the destination had put all twelve encoded cells on one side and none on the other.
+    ///
+    /// Measured afterwards, forty out of forty unencoded moves into an unopened folder arrived, indistinguishable from their controls. The destination is not it.
+    ///
+    /// So the encoding is what varies now, and the destination state is carried along as the second arm rather than the first. Case collisions only: they account for six of the eight failures against one for the decomposed form and none for the precomposed, and a suite whose losing trials cost three minutes each cannot afford to carry a variable which has never yet lost one.
+    ///
+    /// Twelve cells. Four kinds of item moved into an unopened folder with a colliding name, the same four with an ordinary name, and the same four again into an opened folder — the destination control is kept because it is now the measurement which says the first answer was wrong, and dropping it would leave nothing in the run to say so.
     ///
     static let trials: [Trial] = RemoteMoveTests.cells
         .filter { cell in
-            guard cell.encoding == nil else {
+            guard cell.encoding == nil || cell.encoding == .caseCollision else {
                 return false
             }
 
