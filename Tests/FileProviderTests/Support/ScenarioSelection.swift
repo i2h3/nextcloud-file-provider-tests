@@ -72,6 +72,15 @@ enum ScenarioSelection {
             return "a container which is not standard: sharing and group folders need OCS provisioning and the groupfolders application, neither of which this harness speaks"
         }
 
+        // Asked separately from the type, because the two are separate properties and only one of them is currently impossible to represent.
+        //
+        // No cell reaches this line today: ``ScenarioMatrix/ContainerProfile/init(type:permission:)`` refuses the standard read-only pairing outright, so the single point where the invariant "no cell this harness runs rejects writes" is enforced is a failable initialiser in the model. That is one point of failure for an invariant three separate places depend on, and the other two — this function and ``ScenarioWorld/build(_:in:named:)`` — both ask about the *type*. A read-only standard container satisfies a type check and fails nothing, so relaxing the initialiser would hand every one of those cells to a harness which builds a writable folder, writes into it successfully, and reports the refusal it was asked to observe as a pass.
+        //
+        // The sentence is here so that the cells are counted by cause on the day they exist, rather than exploding into coverage nobody asked for.
+        guard scenario.site.placements.allSatisfy({ !$0.container.rejectsWrites }) else {
+            return "a container which rejects writes: nothing here can make a container refuse the test user, and nothing here would notice that it had not"
+        }
+
         return blocker(for: scenario.realization, kind: scenario.item.kind)
     }
 

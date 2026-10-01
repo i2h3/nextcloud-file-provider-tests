@@ -185,6 +185,11 @@ enum ScenarioWorld {
             throw ScenarioWorldError.unsupported("the \(placement.container.type.rawValue) container, which needs sharing or group-folder provisioning this harness does not have")
         }
 
+        // The permission is refused separately from the type, and it has to be: a read-only *standard* container passes the check above, and nothing further down would ask. ``makeParent`` returns a path, ``createItem`` writes into it, and the write succeeds — so the cell would establish the opposite of its own precondition and the suite would assert convergence and find it. ``ScenarioSelection`` holds these cells back by name, which is where they are counted; this is the second lock, for the day something reaches here without passing through that filter.
+        for placement in scenario.site.placements where placement.container.rejectsWrites {
+            throw ScenarioWorldError.unsupported("a container which refuses the test user's writes, which this harness can neither establish nor verify")
+        }
+
         let source = scenario.site.placements[0]
 
         if let trash = scenario.trash {
@@ -359,6 +364,11 @@ enum ScenarioWorld {
 
         for placement in scenario.site.placements where placement.container.type != .standard {
             throw ScenarioWorldError.unsupported("the \(placement.container.type.rawValue) container, which needs sharing or group-folder provisioning this harness does not have")
+        }
+
+        // The permission is refused separately from the type, and it has to be: a read-only *standard* container passes the check above, and nothing further down would ask. ``makeParent`` returns a path, ``createItem`` writes into it, and the write succeeds — so the cell would establish the opposite of its own precondition and the suite would assert convergence and find it. ``ScenarioSelection`` holds these cells back by name, which is where they are counted; this is the second lock, for the day something reaches here without passing through that filter.
+        for placement in scenario.site.placements where placement.container.rejectsWrites {
+            throw ScenarioWorldError.unsupported("a container which refuses the test user's writes, which this harness can neither establish nor verify")
         }
 
         if let trash = scenario.trash {

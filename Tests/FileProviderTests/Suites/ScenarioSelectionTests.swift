@@ -16,7 +16,9 @@ struct ScenarioSelectionTests {
     ///
     /// Exactly which cells of the remote-metadata-update quadrant this harness runs today.
     ///
-    /// Twelve of the quadrant's thirty-eight: two realization levels, three kinds of item, two locations. The other twenty-six are excluded by named blockers rather than by oversight — packages, evicted items, deep materialization, filename encodings — and each is a primitive whose absence is countable.
+    /// Thirty-six of the quadrant's thirty-eight. The two held back are the evicted empty folder, which is not a state to establish but the absence of one: a folder with nothing in it has nothing to drop, so evicted and materialized are the same thing to look at.
+    ///
+    /// It read twelve of thirty-eight for a long time after it was twenty-four and then thirty-six, which is the drift this file exists to prevent — in the file that exists to prevent it. The counts in the assertions moved each time because they are asserted; this sentence did not, because it is a sentence. Numbers belong in the expectations below, and this paragraph should say what the remainder *is* rather than how many of it there are.
     ///
     @Test
     func `The remote metadata update suite runs the cells it is meant to.`() {
@@ -82,7 +84,7 @@ struct ScenarioSelectionTests {
     ///
     /// Exactly which cells of the remote-delete quadrant this harness runs today.
     ///
-    /// Twenty-four of fifty-two. The trash axis is no longer a blocker — the application is turned off and on per room — so what remains is the realization and item-kind blockers which apply everywhere.
+    /// Forty-eight of fifty-two. The trash axis is no longer a blocker — the application is turned off and on per room — so what remains is the evicted empty folder, which is excluded for being indistinguishable from a materialized one rather than for being hard to build.
     ///
     @Test
     func `The remote delete suite runs the cells it is meant to.`() {
@@ -164,7 +166,9 @@ struct ScenarioSelectionTests {
     ///
     /// Asserted together rather than one test per quadrant, because the property that matters is the same for all of them and a reader should be able to see the whole shape at once.
     ///
-    /// Both counts are pinned per quadrant. The first four quadrants each offer exactly twelve cells, which read for a while like a rule and is a coincidence of what the blockers happen to prune: a create pins its **container** rather than its item, the container lattice is smaller than the item lattice, and the create quadrants therefore offer nine. A number changing here is either a primitive gained or coverage lost, and both are worth a deliberate edit.
+    /// Both counts are pinned per quadrant, in the arguments below, and deliberately nowhere else. A number changing there is either a primitive gained or coverage lost, and both are worth a deliberate edit with a diff to read.
+    ///
+    /// This paragraph used to carry the numbers as well, and carried them long after they had moved — twelve apiece for the first four quadrants, nine for the creates, against a table reading fifty-two, twenty-six, forty-eight and sixty. A count written twice is a count that disagrees with itself eventually, and the copy nothing asserts is the one that drifts.
     ///
     /// The four quadrants which pin a container now run every cell they offer. They ran fewer because a container asked to be deeply materialized was judged against the *item's* kind and dropped whenever that item was a file — which is the whole of the difference, and is why the four that moved are exactly the four with a container in their realization.
     ///
@@ -224,6 +228,13 @@ struct ScenarioSelectionTests {
 
         #expect(!counts.keys.contains { $0.hasPrefix("a container which is not standard") }, """
         A cell was excluded for its container type, which phase A cannot emit: every placement it offers is a standard container. Either the model changed or this filter is now describing something else.
+        """)
+
+        // Asked separately, because the clause above cannot answer it. A read-only *standard* container is standard, so it satisfies the type check and would slip past that assertion into a harness which builds a writable folder and finds the convergence the cell was written to see refused.
+        //
+        // Phase A cannot emit one today: ``ScenarioMatrix/ContainerProfile/init(type:permission:)`` refuses the pairing. That refusal is a harness claim living in the model, and it is the sort of thing that gets corrected — so the day it is, this line is what says so, rather than a hundred and fifty-six cells quietly passing.
+        #expect(!counts.keys.contains { $0.hasPrefix("a container which rejects writes") }, """
+        A cell was excluded for rejecting writes, which phase A cannot emit: every container it offers is read-write. The model has started describing refusals, and nothing in this harness observes one — see ScenarioSelection and ScenarioWorld, which now hold such cells back by name.
         """)
     }
 

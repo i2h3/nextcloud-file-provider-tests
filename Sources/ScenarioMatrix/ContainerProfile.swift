@@ -26,9 +26,15 @@ public struct ContainerProfile: Hashable, Sendable {
     ///
     /// Returns `nil` for combinations this harness cannot construct.
     ///
-    /// Note the precise claim, which was corrected after a sibling project refuted the earlier one: a read-only folder you own **does exist** on a real server — `chmod 0555` plus `occ files:scan` drops it to `oc:permissions RG`, writes return 403, and it is fully reversible.
+    /// A read-only folder you own **does exist** on a real server, and the recipe works. Measured on `nextcloud:34.0.0` and again on `nextcloud:35.0.1`, which is what `latest` resolves to: `chmod -R a-w` on the folder inside the container, followed by `occ files:scan --path=/<user>/files/<folder>`, and a `PUT` of a new file, an `MKCOL`, a `DELETE` of a child and a `MOVE` in either direction all answer 403.
     ///
-    /// What rules it out here is the harness's own decision to reach server state over HTTP only: both halves of that recipe need container-level command execution. So this is a *constructability* limit, not an impossibility, and it becomes representable the moment that decision changes.
+    /// Three details of that recipe were wrong here until they were measured, and each would have cost a day. The folder reports `oc:permissions RGDN`, not `RG` — `RG` is what the *child* drops to. `chmod 0555` on the folder alone is not enough, because an overwrite of an existing child still succeeds, which is why the mode has to be applied recursively. And the scan is not cosmetic: without it writes already fail with 403 while `oc:permissions` still advertises `RGDNVCK`, so the server reports a folder as writable that it will refuse to write — and the client decides what to offer from exactly that property.
+    ///
+    /// The earlier reason given here — that the harness reaches server state over HTTP only — was already false when it was written. `TrashApplication` runs `occ` against the container once per room, `TestUser` provisions and deletes through the container manager, and `ServerWorkspace` pauses and resumes the container itself.
+    ///
+    /// What rules the pairing out is narrower and harder, and it is about observing rather than establishing. Nothing in this harness reads ``rejectsWrites`` — its only caller is the generator — so a container the model calls rejecting would be built writable, and the cell would assert the opposite of its own premise and pass. ``Outcome/rejection`` has no judge, and ``OracleClause/sharePermission``, the one clause that makes a refusal correct, has no implementation. Beyond that, more than half of the cells such a profile would emit place the rejecting container at the domain **root**, which this recipe cannot build: the root is the directory every fixture is uploaded into and the directory the domain mounts on. And `occ user:delete` reports success while leaving a home directory containing a read-only folder on disk, so a run would leak into a container the rest of the suite shares.
+    ///
+    /// So this stays a *constructability* limit rather than an impossibility. What has to exist first is a judge for a refusal, not a way to cause one.
     ///
     /// - Parameters:
     ///     - type: What kind of container it is.
