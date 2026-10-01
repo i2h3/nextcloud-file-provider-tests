@@ -41,7 +41,7 @@ enum KnownLimitation {
         return """
         The client does not upload packages, deliberately. Its extension says so in its own log — "Refusing to sync bundle or package because this is not supported" — then adds the name to an ignore list and reports the exclusion to the main app over XPC. Measured on 2026-09-17 and 2026-09-18: a package created in the client never reaches the server, a rename of one never leaves the Mac, and deleting one the client has downloaded is dropped. What does work, and is therefore not expected to fail here: a package created on the server arriving in the client, and deleting one the client never downloaded.
 
-        Disabled by https://github.com/nextcloud/desktop/pull/9971; restoring it is tracked by https://github.com/nextcloud/desktop/issues/9827. When it lands, these cells stop failing and this expectation becomes the thing that fails — which is how the suite tells somebody to delete this entry rather than leaving ninety-three cells quietly untested.
+        Disabled by https://github.com/nextcloud/desktop/pull/9971; restoring it is tracked by https://github.com/nextcloud/desktop/issues/9827. When it lands, these cells stop failing and this expectation becomes the thing that fails — which is how the suite tells somebody to delete this entry rather than leaving forty-nine cells quietly untested. That number is measured and pinned by ``ScenarioSelectionTests``, not carried in this sentence, because it was carried here as ninety-three for long enough to be wrong by nearly double.
         """
     }
 }

@@ -226,4 +226,58 @@ struct ScenarioSelectionTests {
         A cell was excluded for its container type, which phase A cannot emit: every placement it offers is a standard container. Either the model changed or this filter is now describing something else.
         """)
     }
+
+    ///
+    /// How many cells run expecting to fail, counted by quadrant.
+    ///
+    /// The same argument as every other count in this file, applied to the one set it did not cover. ``KnownLimitation`` paints a cell's failure as expected, and the size of that set is coverage: a cell painted expected is a cell whose verdict this suite has stopped reading. Nothing asserted it, and the repository said so twice in prose — ninety-three in ``KnownLimitation`` and twenty-seven in ``CleanRoom`` — against the number this test measures. Two stale sentences and no test is exactly the shape ``ScenarioSelectionTests`` exists to rule out.
+    ///
+    /// ``KnownLimitation/reason(for:)`` matches on a cell's description, so the set moves whenever the model's spelling does. Renaming an axis value narrows it to nothing and the painted cells start failing for real, which is loud; dropping one of its two carve-outs widens it over cells which pass today, and `withKnownIssue` answers that with *expected issue did not occur*, which is also loud. What is **not** loud is the size drifting while both ends still behave — a kind gaining a value, a quadrant gaining rows — and that is what the number below is for.
+    ///
+    /// Printed by quadrant rather than asserted per quadrant. The breakdown is what a reader acts on, and pinning thirteen numbers would make every matrix change a thirteen-line diff for no more safety than one line gives.
+    ///
+    @Test
+    func `The cells which run expecting to fail are counted rather than described.`() {
+        let buildable = Generator.matrix(for: .a).values.flatMap(\.self).filter(ScenarioSelection.isBuildable)
+        var counts = [String: Int]()
+
+        for scenario in buildable where KnownLimitation.reason(for: scenario.description) != nil {
+            counts["\(scenario.origin.rawValue) \(scenario.operation.rawValue)", default: 0] += 1
+        }
+
+        let limited = counts.values.reduce(0, +)
+
+        for (quadrant, count) in counts.sorted(by: { $0.value > $1.value }) {
+            print("  known limitation: \(count) cell\(count == 1 ? "" : "s") in \(quadrant)")
+        }
+
+        #expect(limited == 49, """
+        \(limited) of the \(buildable.count) buildable cells run expecting to fail, against 49 when this was written. Up is coverage this suite has stopped reading the verdict of; down is the client having gained something, and the entry in KnownLimitation should go with it.
+        """)
+    }
+
+    ///
+    /// The limitation is scoped to what was measured, and nothing wider.
+    ///
+    /// Both carve-outs were cut by a run contradicting the rule, which is the argument for running these cells rather than excluding them, made twice by the suite itself. They are asserted here because they are the difference between a registered limitation and a blanket suppression: without them the rule would paint every bundle cell, including the fifty which pass today, and a real regression in any of them would be read as the packages refusal.
+    ///
+    @Test
+    func `A cell the client is known to handle is not painted as a limitation.`() {
+        let buildable = Generator.matrix(for: .a).values.flatMap(\.self).filter(ScenarioSelection.isBuildable)
+        let bundles = buildable.filter { $0.item.kind == .bundle }
+
+        #expect(bundles.count == 107, "The model offers \(bundles.count) buildable bundle cells where it offered 107, so the share this rule reaches has moved.")
+
+        for cell in bundles where cell.origin == .remote {
+            #expect(KnownLimitation.reason(for: cell.description) == nil, """
+            "\(cell.description)" is painted as a known limitation, but a package created on the server reaches the client — five cells said so by failing the expectation rather than the cell.
+            """)
+        }
+
+        for cell in bundles where cell.operation == .delete && cell.description.contains("item:dataless") {
+            #expect(KnownLimitation.reason(for: cell.description) == nil, """
+            "\(cell.description)" is painted as a known limitation, but deleting a package the client never downloaded reaches the server like any other deletion.
+            """)
+        }
+    }
 }
