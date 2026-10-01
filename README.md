@@ -236,9 +236,19 @@ been running for a while — a cell which fails repeatedly may be reporting one 
 many independent failures. `DeletionPropagationRateTests` learned that the hard way and says so at
 length.
 
-Each carries its own control. The move suite moves every kind of item into a folder the client has
-opened and into one it has not, holding everything else fixed, so the comparison is inside one run
-rather than across two.
+Each carries its own control, and the move suite carries two. It moves every kind of item under a
+name which collides with a sibling by case and under an ordinary one, and separately into a folder
+the client has opened and into one it has not, holding everything else fixed — so the comparison is
+inside one run rather than across two. The destination arm is the reason the first answer is known to
+have been wrong: it looked like the unopened folder until the encodings were put on their own axis
+and forty unencoded moves into one arrived without a single loss.
+
+A trial which loses its item asks where the item went, by looking up the name it was given, the four
+names macOS produces when it has to disambiguate, and the item's old path. It asks by path rather
+than by listing, because listing the destination is what stops it being the unopened folder the cell
+pinned, and it leaves the lost item in place so that there is something to find. The two containers
+are listed once, after the last trial of a cell, where a listing can no longer change what any trial
+measured. Everything that finds is attached to the run beside the rate.
 
 ## Running from Xcode
 

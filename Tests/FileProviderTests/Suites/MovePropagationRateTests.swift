@@ -30,6 +30,14 @@ import Testing
 ///
 /// **A trial which cannot be set up is dropped rather than counted.** Building the world can fail on its own, and such a trial says nothing about moving either way.
 ///
+/// **A lost trial is asked where its item went, and keeps it.** "Lost" is the claim this suite is least entitled to make: it has already been made wrongly once, by a destination path built one level too deep which scored nought out of eighty and reported it as a rate. So a trial which loses its item looks the item up by name afterwards — under the name it was given, under the four the system would produce if it had to disambiguate, and back at its source — and it does not delete it, because the item is the only evidence there is and tidying up destroys it. The containers themselves are listed once, after the last trial, where a listing can no longer change what any trial measured.
+///
+/// The lookups are by path and never by listing, and that is not a preference. Half of these cells pin a destination the client has never enumerated; listing it is exactly what stops it being one, the pin is held for the whole cell, and nothing downstream would notice it had come loose. A run which diagnosed itself by listing would convert the arm under test into its own control and report the result as a rate.
+///
+/// **What holds the unopened destination open is assumed, not measured, and the assumption is older than the lookups.** A name which is absent can only be reported absent by something which has looked, so a lookup for a name a container does not hold might be what makes that container enumerate — and the ledger would not say so, because it records the listings this harness performs and not the ones the system performs to answer it. If that is how it works, every `->dataless` cell here has been measuring an opened destination since well before any of this: ``observe`` polls the destination path for three minutes on a trial which is going to lose, and that path does not exist. The lookups a lost trial adds are five more of a kind the wait has already made hundreds of, which is why the cell runs on rather than stopping — stopping could not restore a pin the wait had already pulled.
+///
+/// Evidence the other way, and the reason this is a caveat rather than a defect: ``ScenarioWorld`` asserts through the ledger that a *successful* lookup inside an unentered container leaves it unentered, and that assertion passes. Negative lookups have never been put to the same test. Until they are, read the destination arm as the weaker of the two comparisons — which is the arm the encodings replaced as the subject anyway.
+///
 @Suite("Move propagation rate", .requiresLiveEnvironment, .requiresRepetitions, .serialized, .timeLimit(.minutes(120)))
 struct MovePropagationRateTests {
     ///
@@ -178,10 +186,16 @@ struct MovePropagationRateTests {
             // Taken from the world rather than named here, so that the container this suite looks in cannot drift from the one ``ScenarioWorld`` builds.
             var destinationContainer: String?
 
+            // The same, for the place the item came from. A lost trial is only half described by what is missing from the destination; the other half is whether it is still where it started, which is what tells a move nobody heard about from one that went somewhere nobody looked.
+            var sourceContainer: String?
+
             var counts = [Outcome: Int]()
             var dropped = 0
             var latencies = [Duration]()
             var lateLatencies = [Duration]()
+
+            // What the lookups found on the trials which lost their item, and what the containers held once every trial was over. Kept rather than only printed, because this is the evidence the next run is read against and terminal scrollback is not evidence.
+            var losses = [String]()
 
             for trial in 1 ... trials {
                 let name = ScenarioWorld.name("trial-\(trial)", for: cell.item.kind, encoding: cell.encoding)
@@ -206,6 +220,7 @@ struct MovePropagationRateTests {
 
                 // `destinationLocal` is already the item's whole path after the move, name included, which is how ``RemoteMoveTests`` uses it. Joining the name onto it again produced a path one level below where the item lands — `box/trial-1.bin/trial-1.bin` — which cannot exist, so every trial of every cell was counted as lost. Eighty of them, in four and three quarter hours, including the control arm which had moved fifty-six items out of sixty the day before.
                 destinationContainer = subject.destinationLocalPath
+                sourceContainer = subject.parentLocalPath
 
                 let from = room.localURL(of: subject.localPath(of: name))
                 let to = room.localURL(of: destinationLocal)
@@ -222,6 +237,16 @@ struct MovePropagationRateTests {
 
                 counts[outcome, default: 0] += 1
 
+                guard outcome != .lost else {
+                    let sentence = probe(for: name, in: subject.destinationLocalPath ?? "", from: subject.localPath(of: name), in: room)
+
+                    losses.append("trial \(trial) \(sentence)")
+                    note(trial, sentence)
+
+                    // The item stays where it is, which is the one place this measurement has to look. A lost trial's entire evidence is the item itself, and tidying it away for the sake of the next trial deletes the thing the run was started to find. Trials name their items apart, so what is left behind cannot be taken for a later trial's.
+                    continue
+                }
+
                 // Put the server back, or the next trial is not a fresh sample. The item is deleted rather than moved home, because a move back is another move and would be measured by the client as one.
                 try? await room.server.delete(destinationRemote)
             }
@@ -234,20 +259,72 @@ struct MovePropagationRateTests {
                 return
             }
 
+            if (counts[.lost] ?? 0) > 0 {
+                // Listed here and nowhere before here. Entering a container is what stops it being unentered, and half of these cells are about a destination the client has never opened — but no trial follows this line, so a listing cannot change what any of them measured. It is also why a lost trial leaves its item behind: tidying up would have emptied the container this sentence describes.
+                losses.append("""
+                with every trial over, the destination is \(destinationContainer.map { ScenarioWorld.describe($0, in: room) } ?? "not known") \
+                and the source is \(sourceContainer.map { ScenarioWorld.describe($0, in: room) } ?? "not known")
+                """)
+            }
+
             // A cell where not one trial arrived is more likely a broken instrument than a client which lost every single move, and this suite asserts so little that a broken instrument otherwise reports itself as a pass. It did: a path built one level too deep scored nought out of eighty, control arm included, and the run ended green.
             //
             // Said as an issue rather than swallowed, and said as a doubt about the measurement rather than as a finding about the client — because a genuine total loss is possible and must not be suppressed by the guard against a mistake.
             if (counts[.moved] ?? 0) == 0, (counts[.late] ?? 0) == 0, (counts[.copied] ?? 0) == 0 {
                 Issue.record("""
                 Not one of \(counted) moves arrived, so this cell measured either a client which loses every move of this shape or a harness which was watching the wrong place. \
-                The destination held \(destinationContainer.map { ScenarioWorld.describe($0, in: room) } ?? "nothing this could look at") when the trials were over. \
-                Read once, here, and never during the trials: listing a container is how it stops being unentered, and half of these cells are about a destination the client has never opened. \
+                What the lookups asked of each lost trial, and what the two containers held once the trials were over, is recorded with this run beside the rate. \
                 Establish which of the two it was before treating the rate below as a finding.
                 """)
             }
 
-            report(counts, counted: counted, dropped: dropped, latencies: latencies, lateLatencies: lateLatencies, for: cell, in: room, against: underTest)
+            report(counts, counted: counted, dropped: dropped, latencies: latencies, lateLatencies: lateLatencies, losses: losses, for: cell, in: room, against: underTest)
         }
+    }
+
+    ///
+    /// Where a lost item actually is, asked without listing anything.
+    ///
+    /// The only question a lost trial leaves open is whether the item is missing or merely somewhere else, and this suite has already answered it wrongly once: a destination path built one level too deep scored nought out of eighty and reported that as a rate.
+    ///
+    /// It cannot be settled by listing the destination. Half of these cells are about a container the client has never enumerated, and listing it is precisely what stops it being one — worse here than elsewhere, because the state of that container is pinned for the whole cell and nothing downstream would notice it had changed. So every candidate is asked for by path, which is the same lookup ``ScenarioWorld`` already relies on to find an item inside a container it must not enter.
+    ///
+    /// The source is asked about too. A move the client never heard of leaves the item where it was; a move it followed to a name this suite did not anticipate leaves the source empty and the destination holding something. Those are different answers and only the pair distinguishes them.
+    ///
+    /// - Parameters:
+    ///     - name: The name the item was given.
+    ///     - container: The destination container, relative to the domain.
+    ///     - source: Where the item was before the move, relative to the domain.
+    ///     - room: The room.
+    ///
+    /// - Returns: A sentence naming what was found, or saying that nothing was.
+    ///
+    private func probe(for name: String, in container: String, from source: String, in room: CleanRoom) -> String {
+        func isPresent(_ path: String) -> Bool {
+            ((try? LocalNode.at(room.localURL(of: path))) ?? nil) != nil
+        }
+
+        var found = [String]()
+
+        for candidate in [name] + ScenarioWorld.bounceCandidates(of: name) {
+            guard isPresent(container.isEmpty ? candidate : "\(container)/\(candidate)") else {
+                continue
+            }
+
+            found.append("\"\(candidate)\" at the destination")
+        }
+
+        if isPresent(source) {
+            found.append("the item still at its source, \"\(source)\"")
+        }
+
+        guard !found.isEmpty else {
+            return """
+            was looked for by name afterwards and is nowhere: not under the name it was given, not under any of the four a bounce would have produced, and not at its source either
+            """
+        }
+
+        return "was looked for by name afterwards, which found \(found.joined(separator: ", "))"
     }
 
     ///
@@ -329,6 +406,7 @@ struct MovePropagationRateTests {
     ///     - dropped: How many were dropped before measuring.
     ///     - latencies: The durations of the on-time arrivals.
     ///     - lateLatencies: The durations of the late ones.
+    ///     - losses: What the lookups and the closing listing found, one sentence each.
     ///     - cell: What was measured.
     ///     - room: The room it was measured in.
     ///     - underTest: The server it ran against.
@@ -339,6 +417,7 @@ struct MovePropagationRateTests {
         dropped: Int,
         latencies: [Duration],
         lateLatencies: [Duration],
+        losses: [String],
         for cell: Scenario,
         in room: CleanRoom,
         against underTest: ServerUnderTest
@@ -363,6 +442,11 @@ struct MovePropagationRateTests {
         """)
 
         ScenarioOracle.observe(summary, in: room)
+
+        // One observation each rather than one paragraph. A rate is compared with the next run's rate and a lookup is read on its own, and a sentence buried inside another one is neither.
+        for loss in losses {
+            ScenarioOracle.observe("\(cell.description): \(loss)", in: room)
+        }
 
         for duration in latencies {
             MetricsRecorder.record("server to client move, propagated", duration: duration, in: room, test: cell.description)

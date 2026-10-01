@@ -53,4 +53,31 @@ struct BounceRecognitionTests {
         #expect(!ScenarioWorld.isBounce(of: "report.bin", named: "report 2.rtfd"))
         #expect(!ScenarioWorld.isBounce(of: "report.bin", named: "report 2"))
     }
+
+    ///
+    /// The convention is written twice — once to recognise a name a listing produced, once to produce the names a caller which may not list has to ask for — and the two must stay the same convention.
+    ///
+    /// The failure this rules out is silent in exactly the way that matters. A generator which drifted from the recogniser would look for names the system never gives, find nothing, and report that an item is missing — which is the sentence ``MovePropagationRateTests`` is currently being used to decide the truth of.
+    ///
+    @Test(arguments: ["travelling-Sibling.rtfd", "trial-1.bin", "travelling-Sibling", "archive.tar.gz"])
+    func `Every name the generator proposes is one the recogniser accepts.`(_ name: String) {
+        let candidates = ScenarioWorld.bounceCandidates(of: name)
+
+        #expect(candidates.count == 4, "The generator stopped proposing the four names the loss path asks for.")
+
+        for candidate in candidates {
+            #expect(ScenarioWorld.isBounce(of: name, named: candidate), """
+            The generator proposed "\(candidate)" for "\(name)" and the recogniser rejects it, so the two have drifted apart.
+            """)
+        }
+    }
+
+    ///
+    /// The name itself is not among them, because the caller asks for that one separately and a duplicate would report the same finding twice.
+    ///
+    @Test
+    func `The generator proposes the numbers the system uses, and not the original name.`() {
+        #expect(ScenarioWorld.bounceCandidates(of: "trial-1.bin") == ["trial-1 2.bin", "trial-1 3.bin", "trial-1 4.bin", "trial-1 5.bin"])
+        #expect(ScenarioWorld.bounceCandidates(of: "box") == ["box 2", "box 3", "box 4", "box 5"])
+    }
 }

@@ -384,6 +384,29 @@ enum ScenarioWorld {
     }
 
     ///
+    /// The names the system could have given an arriving item whose own name was already taken.
+    ///
+    /// macOS disambiguates by putting a space and a number before the extension, and ``isBounce(of:named:)`` recognises that shape once a listing has produced a candidate to test. This produces the candidates instead, for a caller which may not list the container it would otherwise search and has to ask for names it already holds — ``MovePropagationRateTests`` looking for an item a move lost, whose destination is pinned unentered for the length of the cell.
+    ///
+    /// Kept beside the recogniser deliberately. They are one convention written twice, and two files would let them drift until a name this produced was not a name that one accepted; ``BounceRecognitionTests`` asserts the round trip.
+    ///
+    /// Four of them. A container which had to disambiguate the same name five times over is a different question than the one being asked here, and it would be asked of a container holding five items this harness put there.
+    ///
+    /// - Parameters:
+    ///     - name: The name the item was given.
+    ///
+    /// - Returns: The candidates, in the order the system would reach for them.
+    ///
+    static func bounceCandidates(of name: String) -> [String] {
+        let stem = (name as NSString).deletingPathExtension
+        let suffix = (name as NSString).pathExtension
+
+        return (2 ... 5).map { index in
+            suffix.isEmpty ? "\(stem) \(index)" : "\(stem) \(index).\(suffix)"
+        }
+    }
+
+    ///
     /// Whether one name is what the system renamed another to when it could not hold both.
     ///
     /// macOS disambiguates by appending a space and a number before the extension: `report.rtfd` becomes `report 2.rtfd`. Matching that is inference rather than evidence — the item's own `before-bounce` attribute is the system saying what it did — so this is only reached when the attribute is absent, and what found the name is recorded either way.
