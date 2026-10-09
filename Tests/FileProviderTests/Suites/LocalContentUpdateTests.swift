@@ -35,7 +35,8 @@ struct LocalContentUpdateTests {
         }
 
         try await CleanRoom.with(underTest, testName: "LocalContentUpdate.\(cell.item.kind.rawValue).\(level.rawValue)", cell: cell.description) { room in
-            let name = "edited.bin"
+            // Named for the kind rather than as a literal, for the reason ``RemoteContentUpdateTests`` records and this suite did not learn from. A literal gives a bundle cell a directory called "edited.bin", which macOS does not treat as a package — so the cell builds a plain directory, the client has no package to refuse, and the run of 2026-10-09 reported four such cells as "known issue was not recorded", which reads as the client having gained a capability. It had not: the extension logs of those four rooms carry no refusal at all, while every room whose subject really was a `.rtfd` carries one.
+            let name = ScenarioWorld.name("edited", for: cell.item.kind)
             let subject = try await ScenarioWorld.build(cell, in: room, named: name)
             let url = room.localURL(of: subject.localPath(of: name))
 

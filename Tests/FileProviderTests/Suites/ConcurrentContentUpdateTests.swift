@@ -39,7 +39,8 @@ struct ConcurrentContentUpdateTests {
         }
 
         try await CleanRoom.with(underTest, testName: "ConcurrentContentUpdate.\(cell.item.kind.rawValue).\(level.rawValue)", cell: cell.description) { room in
-            let name = "contested.bin"
+            // Named for the kind rather than as a literal, for the reason ``RemoteContentUpdateTests`` records and this suite did not learn from. A literal gives a bundle cell a directory called "contested.bin", which macOS does not treat as a package — so the cell builds a plain directory, the client has no package to refuse, and the run of 2026-10-09 reported four such cells as "known issue was not recorded", which reads as the client having gained a capability. It had not: the extension logs of those four rooms carry no refusal at all, while every room whose subject really was a `.rtfd` carries one.
+            let name = ScenarioWorld.name("contested", for: cell.item.kind)
             let subject = try await ScenarioWorld.build(cell, in: room, named: name)
             let url = room.localURL(of: subject.localPath(of: name))
 
@@ -160,7 +161,10 @@ struct ConcurrentContentUpdateTests {
 
             guard converged else {
                 Issue.record("""
-                Both sides wrote different bytes to "\(name)" and five minutes later they still hold different bytes for it. The client wrote \(byClient.count) bytes and the server \(byServer.count). Every result the specification permits ends with the two sides agreeing, whichever version won and whether or not a copy was kept.
+                A local write refused once by the server was abandoned rather than retried, so the two sides hold different bytes for "\(name)" permanently. \
+                The client wrote \(byClient.count) bytes and the server \(byServer.count), and five minutes later neither had moved. \
+                Every result the specification permits ends with the two sides agreeing, whichever version won and whether or not a copy was kept — and this run ends with neither. \
+                Read the extension log for the subject's name beside a non-2xx status before concluding anything: measured on 2026-10-09, the upload met HTTP 423 Locked, the extension answered the system with NSFileProviderErrorCannotSynchronize, and nothing retried it.
                 """)
 
                 return

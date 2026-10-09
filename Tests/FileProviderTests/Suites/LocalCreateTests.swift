@@ -72,13 +72,12 @@ struct LocalCreateTests {
                 """)
             }
 
-            try await Waiter.poll("the server receives \"\(name)\"", timeout: LiveEnvironment.scaled(.seconds(180))) {
-                try await room.remoteChildren(of: site.parentRemotePath).contains { $0.name == name }
-            }
+            // One wait rather than two, and the hardened one. This used to poll `remoteChildren` with a bare `try`, so a listing which *raised* ended the cell instead of being retried — and a directory the provider has just created raises for a moment: Nextcloud reports `oc:size` as -1 for a folder whose size has not been computed yet, which the client library rejects with "Failed to get size for". The run of 2026-10-09 lost one cell that way, and earlier runs lost the opposite one, which is how it reads as a coin toss rather than a property of the root.
+            //
+            // ``CleanRoom/waitForRemoteEntry(named:in:timeout:)`` already treats a refusal as "not yet", and its entry is wanted a few lines down in any case.
+            let entry = try await room.waitForRemoteEntry(named: name, in: site.parentRemotePath, timeout: LiveEnvironment.scaled(.seconds(180)))
 
             MetricsRecorder.record("client to server creation", duration: ContinuousClock.now - started, in: room, test: cell.description)
-
-            let entry = try await room.waitForRemoteEntry(named: name, in: site.parentRemotePath)
 
             #expect(entry.isDirectory == (cell.item.kind != .file), """
             "\(name)" arrived on the server as \(entry.isDirectory ? "a directory" : "a file") where a \(cell.item.kind.rawValue) was created.
