@@ -772,7 +772,23 @@ enum ScenarioWorld {
                 // A package takes this path rather than the folder path above, and the run of 2026-10-09 is why. It used to be sent through the folder branch, which lists the package to find files to fetch — and listing is exactly what the system answers by faulting the whole package in, so the eviction was asked for against a package the harness had just downloaded, and `evictUbiquitousItem` refused it. Both cells raised "the system would not accept the eviction it was asked for" on every run.
                 //
                 // macOS presents a package as **one** item whose content is the whole tree, so it is fetched and dropped as one, like a file, and never entered. Whether its own dataless flag moves afterwards is the open question — a plain folder's never does — so the wait below reads that flag and its diagnosis says what it found, which turns an unknown into something the next run answers rather than something this comment has to guess.
-                _ = try Materialization.materialize(url)
+                // Fetched by the call that suits what it is. A file is fetched by being read, and a package cannot be: it is a directory on disk, so `Data(contentsOf:)` answers EISDIR — "The file \"revised.rtfd\" couldn't be opened", measured on 2026-10-09 when these cells were first sent down this path. `startDownloadingUbiquitousItem` asks the system for the item's content without reading it, which is the only route that applies to a package.
+                if kind == .bundle {
+                    guard Materialization.startDownloading(url) else {
+                        throw ScenarioWorldError.unsupported("a fetched \(kind.rawValue), because the system would not accept the download it was asked for")
+                    }
+
+                    // Waited for rather than assumed, because the download is asynchronous and evicting content which has not arrived drops nothing. Listing the package is safe here and only here: the cell is about to ask for the content anyway, so faulting it in is the step rather than an accident.
+                    try await Waiter.waitUntilBlocking(
+                        "\"\(url.lastPathComponent)\" finishes downloading",
+                        timeout: LiveEnvironment.scaled(.seconds(60)),
+                        diagnosis: { describe(path, in: room) }
+                    ) {
+                        try room.localChildren(of: path).contains { $0.kind == .file && $0.allocatedBlocks > 0 }
+                    }
+                } else {
+                    _ = try Materialization.materialize(url)
+                }
 
                 guard Materialization.evict(url) else {
                     throw ScenarioWorldError.unsupported("an evicted \(kind.rawValue), because the system would not accept the eviction it was asked for")
