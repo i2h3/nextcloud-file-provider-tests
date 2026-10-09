@@ -206,7 +206,7 @@ struct MaterializationTests {
 
             ScenarioOracle.observe("""
             the system accepted evicting the folder "\(folder)": afterwards the folder reads as \(folderNode.isDataless ? "dataless" : "not dataless") and its fetched child as \(childNode.isDataless ? "dataless, so the content really was dropped" : "still materialized, so the call was accepted and changed nothing"). \
-            \(folderNode.isDataless || childNode.isDataless ? "The state can be established, and the fifty-six cells excluded for it are excluded wrongly." : "The state cannot be confirmed, which is the answer that would have been hidden by assuming either of the other two.")
+            \(folderNode.isDataless || childNode.isDataless ? "The state can be established, which is why the model now offers an evicted container rather than withholding it — ScenarioSelection declines those cells for what this harness can build, which is a reason that can expire." : "The state cannot be confirmed, which is the answer that would have been hidden by assuming either of the other two.")
             """, in: room)
         }
     }

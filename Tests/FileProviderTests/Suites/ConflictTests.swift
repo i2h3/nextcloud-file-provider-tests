@@ -100,10 +100,48 @@ struct ConflictTests {
             // And asked of a directory inside the domain rather than of the domain root, which is what it used to be. The root is the mount point, not an item the provider serves, so it carries no item's keys whatever the client does — the expectation below held for a reason that had nothing to do with the contract it names, and a client which started advertising sync controls on directories would not have moved it.
             let directory = try await makeDirectory(in: room, named: "plain-directory")
 
-            #expect(SyncControl.supportedControls(of: directory) == nil, """
-            A regular directory carries the sync-control key, but pausing one is documented to be refused with `CocoaError.featureUnsupported`. An application reading this key would attempt something that cannot work.
+            // Two answers are correct here and the first version of this demanded one of them. It asserted the key was absent, and the client answers with the key present and advertising nothing — `rawValue: 0` — which an application reads as "neither control is available" and acts on exactly as it would act on an absent key. Demanding absence turned a correct answer into a drafted bug report, which is the failure this suite is least able to afford: the report was addressed to a client that had done nothing wrong.
+            //
+            // What is actually under contract is that a plain directory does not claim a capability the system refuses on it, so that is what is asserted. Which of the two correct answers the client gives is recorded as an observation rather than judged.
+            let directoryControls = SyncControl.supportedControls(of: directory)
+
+            #expect(directoryControls?.contains(.pauseSync) != true, """
+            A regular directory advertises that its synchronisation can be paused, but pausing one is documented to be refused with `CocoaError.featureUnsupported`. An application reading this key would attempt something that cannot work.
             """)
+
+            #expect(directoryControls?.contains(.failUploadOnConflict) != true, """
+            A regular directory advertises that an upload can be failed on a conflict, which is not available on items the system excludes from this family.
+            """)
+
+            ScenarioOracle.observe("""
+            a plain directory in \(underTest) answers the sync-control key with \(directoryControls.map { "rawValue \($0.rawValue)" } ?? "no key at all"), \
+            and both an absent key and one advertising nothing tell an application the same thing
+            """, in: room)
         }
+    }
+
+    ///
+    /// Record that the provider would not pause the item, and say plainly what the run therefore did not measure.
+    ///
+    /// A refused pause is not a conflict result and must not be reported as one. It is the precondition failing, and the clause it supports goes unjudged — which is a statement a run has to make out loud, because a clause quietly missing from an evaluation is indistinguishable from one that passed.
+    ///
+    /// Measured on 2026-10-09, and the measurement is why this is a decline rather than a finding. `pauseSyncForUbiquitousItem` is refused by **iCloud Drive** too, with `CocoaError.featureUnsupported`, in every variant tried: a plain file, a file held open for reading, one held open for writing, one after a coordinated write, and a directory. Apple's own provider advertises `rawValue 3` on a file and then refuses, exactly as this client does. So no provider reachable from this machine honours the call, there is no positive control to compare against, and this harness cannot say whether the client would detect a conflict if the pause had been granted.
+    ///
+    /// The one thing which *is* specific to this client is the error it refuses with, and that is recorded as an observation rather than asserted: `NSFileWriteNoPermissionError` where the documented refusal for this family is `CocoaError.featureUnsupported`. Worth noticing if it changes; not worth a report on its own.
+    ///
+    /// - Parameters:
+    ///     - error: Whatever pausing raised.
+    ///     - underTest: The server the room was built against, so the observation names it.
+    ///     - room: The room, so the observation is attached to it.
+    ///
+    private func declinePausing(_ error: any Error, on underTest: ServerUnderTest, in room: CleanRoom) {
+        ScenarioOracle.observe("pausing an item in \(underTest) was refused with \(SyncControlFailure.describe(error))", in: room)
+
+        ScenarioOracle.decline("conflictResolution", because: """
+        the provider refused to pause the item, so the divergence this clause judges was never arranged. \
+        Pausing is the only documented route to asking a provider for conflict detection, and measured on 2026-10-09 it is refused by iCloud Drive as well, \
+        with CocoaError.featureUnsupported and in every variant tried. No provider reachable here honours the call, so this is a gap in what can be observed rather than an answer about any client
+        """)
     }
 
     ///
@@ -139,6 +177,11 @@ struct ConflictTests {
             } catch let SyncControlFailure.resuming(error) {
                 // Refusing to resume is how the provider reports the conflict it was asked to detect, so this is a result rather than a problem.
                 resumeError = error
+            } catch let SyncControlFailure.pausing(error) {
+                // The precondition, not the contract. Everything below this point reads a divergence which was never arranged, so the clause is declined by name and the test stops rather than reporting the absence of a conflict as the absence of a defect.
+                declinePausing(error, on: underTest, in: room)
+
+                return
             }
 
             // Anything else — a failed pause, or a failed write — left this scope already, attributed, rather than arriving here disguised as a conflict.
@@ -182,12 +225,18 @@ struct ConflictTests {
 
             #expect(SyncControl.isPaused(file) == false, "The file was already paused before the test paused it, so something earlier left it that way.")
 
-            try await SyncControl.withPaused(file, resumingWith: .preservingLocalChanges) {
-                try localContent.write(to: file)
+            do {
+                try await SyncControl.withPaused(file, resumingWith: .preservingLocalChanges) {
+                    try localContent.write(to: file)
 
-                try await ServerWorkspace.withFixture(named: name, size: 16 * 1024, seed: 65) { source, _ in
-                    try await room.server.upload(source, to: "/", force: true)
+                    try await ServerWorkspace.withFixture(named: name, size: 16 * 1024, seed: 65) { source, _ in
+                        try await room.server.upload(source, to: "/", force: true)
+                    }
                 }
+            } catch let SyncControlFailure.pausing(error) {
+                declinePausing(error, on: underTest, in: room)
+
+                return
             }
 
             // Settled when the two sides agree, which is what every permitted outcome ends in.
