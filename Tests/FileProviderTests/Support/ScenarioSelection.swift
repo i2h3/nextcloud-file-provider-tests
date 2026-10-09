@@ -89,7 +89,9 @@ enum ScenarioSelection {
     ///
     /// The kind a level is judged against is the kind of the thing that level describes, which is not always the item. ``Realization`` exists to make that distinction impossible to miss, and this function missed it: every level was judged against the item's kind, including the levels which describe a container.
     ///
-    /// It was wrong in both directions at once. A container asked to be `materializedDeep` is a folder holding the item, so it can always be built — but the check asked whether the *item* was a folder with children, and dropped every such cell whose item was a file. A container asked to be `evicted` cannot be built at all, because a folder has no content to drop — but the check asked whether the *item* was a file, and admitted it whenever it was.
+    /// It was wrong in both directions at once. A container asked to be `materializedDeep` is a folder holding the item, so it can always be built — but the check asked whether the *item* was a folder with children, and dropped every such cell whose item was a file. A container asked to be `evicted` was judged by asking whether the *item* was a file, which is a question about the wrong thing entirely.
+    ///
+    /// An evicted container is now asked about separately, before this loop, because the answer depends on the container's position rather than on any kind. The loop below can no longer reach `evicted` for a container at all.
     ///
     /// - Parameters:
     ///     - realization: What the cell asks for.
@@ -101,6 +103,25 @@ enum ScenarioSelection {
         // A container level is a statement about a folder which holds the item, so it is judged as one.
         let subject: ItemKind = realization.isAboutParents ? .folderWithChildren : kind
         let noun = realization.isAboutParents ? "container" : subject.rawValue
+
+        // Whether each pinned container holds anything but the item under test at the moment the cell pins it, which is the one question `subject` above cannot answer and the thing an evicted container turns on.
+        //
+        // ``ScenarioWorld`` creates a move's destination before the item, and a create's container is pinned precisely because the item does not exist yet, so those hold nothing at all. A move's source holds exactly one thing: the item. Both are declined, for reasons worth keeping apart.
+        let holdsSomething: [Bool] = switch realization {
+            case .item: []
+            case .parent: [false]
+            case .parents: [true, false]
+        }
+
+        for (position, level) in realization.levels.enumerated() where level == .evicted && realization.isAboutParents {
+            guard holdsSomething.indices.contains(position), holdsSomething[position] else {
+                return "an evicted container which is empty when the cell pins it: this harness builds a move's destination, and a create's container, before the item goes into them, so there is nothing in the folder to drop"
+            }
+
+            return """
+            an evicted container holding nothing but the item under test: dropping its contents drops that item and nothing else, which is the world an evicted *item* already describes, so the two cells build the same thing and the cell naming the container could not fail
+            """
+        }
 
         for level in realization.levels {
             switch level {

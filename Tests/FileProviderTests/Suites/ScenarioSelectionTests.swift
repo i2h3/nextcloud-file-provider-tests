@@ -154,7 +154,7 @@ struct ScenarioSelectionTests {
         let all = Generator.matrix(for: .a).values.flatMap(\.self)
         let buildable = all.filter(ScenarioSelection.isBuildable)
 
-        #expect(all.count == 466)
+        #expect(all.count == 586)
         // 328 until a container's realization level stopped being judged against the item's kind, then 350. The matrix itself then grew from 406 to 466: the root-container rule was written as a whitelist admitting only `materialized`, which also dropped `materializedDeep` — a level neither of the two rules it documents mentions, and not degenerate at a root which holds at least the item under test. Sixty rows in the four quadrants which pin a container, none of them previously counted as unbuildable, because they were never generated at all. Then 448: a probe measured that a directory can be evicted after all — the system accepts it, the children come back with no allocated blocks, and only the folder's own flag stays clear — so thirty-eight of the fifty-six cells refused for it are refused no longer. An empty folder still is, and now for a reason which is about the state rather than about the mechanism: it holds nothing to drop, so evicted and materialized are the same thing to look at.
         #expect(buildable.count == 448, """
         The harness can build \(buildable.count) of the \(all.count) cells of phase A. A change to this number is either a primitive gained or coverage lost, and both are worth a deliberate edit here.
@@ -170,15 +170,17 @@ struct ScenarioSelectionTests {
     ///
     /// This paragraph used to carry the numbers as well, and carried them long after they had moved — twelve apiece for the first four quadrants, nine for the creates, against a table reading fifty-two, twenty-six, forty-eight and sixty. A count written twice is a count that disagrees with itself eventually, and the copy nothing asserts is the one that drifts.
     ///
-    /// The four quadrants which pin a container now run every cell they offer. They ran fewer because a container asked to be deeply materialized was judged against the *item's* kind and dropped whenever that item was a file — which is the whole of the difference, and is why the four that moved are exactly the four with a container in their realization.
+    /// The four quadrants which pin a container are the four where the two numbers differ, and they differ for one reason. The model now offers a container at `evicted`, which it withheld on a premise a probe refuted — so a hundred and twenty cells which never existed now exist, and every one of them is declined, by name and for a reason that is about this harness rather than about the client.
+    ///
+    /// Nothing runs that did not run before, and that is the honest outcome rather than a disappointing one. Those cells were previously absent from the matrix altogether, which is the one way a gap cannot be counted; they are now in the remainder, where the reason sits beside them and the day one of them becomes buildable is a number moving in this file.
     ///
     @Test(arguments: [
         ("LocalDelete", LocalDeleteTests.cells, Quadrant(origin: .local, operation: .delete), 52, 48),
         ("LocalMetadataUpdate", LocalMetadataUpdateTests.cells, Quadrant(origin: .local, operation: .metadataUpdate), 26, 24),
-        ("LocalMove", LocalMoveTests.cells, Quadrant(origin: .local, operation: .move), 48, 48),
-        ("RemoteMove", RemoteMoveTests.cells, Quadrant(origin: .remote, operation: .move), 60, 60),
-        ("LocalCreate", LocalCreateTests.cells, Quadrant(origin: .local, operation: .create), 30, 30),
-        ("RemoteCreate", RemoteCreateTests.cells, Quadrant(origin: .remote, operation: .create), 42, 42),
+        ("LocalMove", LocalMoveTests.cells, Quadrant(origin: .local, operation: .move), 96, 48),
+        ("RemoteMove", RemoteMoveTests.cells, Quadrant(origin: .remote, operation: .move), 108, 60),
+        ("LocalCreate", LocalCreateTests.cells, Quadrant(origin: .local, operation: .create), 42, 30),
+        ("RemoteCreate", RemoteCreateTests.cells, Quadrant(origin: .remote, operation: .create), 54, 42),
         ("LocalContentUpdate", LocalContentUpdateTests.cells, Quadrant(origin: .local, operation: .contentUpdate), 8, 8),
         ("RemoteContentUpdate", RemoteContentUpdateTests.cells, Quadrant(origin: .remote, operation: .contentUpdate), 24, 24),
         ("ConcurrentDelete", ConcurrentDeleteTests.cells, Quadrant(origin: .concurrent, operation: .delete), 52, 48),

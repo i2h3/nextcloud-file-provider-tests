@@ -26,7 +26,7 @@ public enum Constraints {
     //
     // `RealizationLevel.evicted` is the precedent — it *is* a two-operation prefix (materialize → evict) collapsed into a single precondition value, because the residue it leaves is a distinguishable state. By the same gate, materialize→evict→materialize, rename→rename-back and create→rename→delete are already covered: each step begins from a state this lattice enumerates, provided the harness settles between steps, which it must do regardless.
     //
-    // History therefore enters this model as a named state value, the way `evicted` did, or not at all. Two residues are known to survive the gate and are recorded as deferred candidates rather than built: version lineage (a locally-created item carries a different baseVersion into its next operation than an enumerated one) and identifier reuse after delete-then-recreate-same-name. Neither is built, because no cell in this model has yet been executed.
+    // History therefore enters this model as a named state value, the way `evicted` did, or not at all. Two residues are known to survive the gate and are recorded as deferred candidates rather than built: version lineage (a locally-created item carries a different baseVersion into its next operation than an enumerated one) and identifier reuse after delete-then-recreate-same-name. Neither is built, and the reason given here was for a long time that no cell in this model had yet been executed — which stopped being true well before anyone corrected the sentence. Thousands have run since; the deferral stands on its own merits, which are that neither residue has a way to be read yet.
     //
 
     // MARK: - Quadrant legality
@@ -81,8 +81,10 @@ public enum Constraints {
                 return levels
 
             case .container:
-                // A container is a directory. `evicted` is excluded: folder eviction aborts non-deterministically on a non-evictable child, so it is not a state a test can establish as a reliable precondition.
-                return [.unknown, .dataless, .materialized, .materializedDeep]
+                // A container is a directory, and every level a directory can be in is offered. `evicted` was withheld here for a long time on the claim that folder eviction "aborts non-deterministically on a non-evictable child, so it is not a state a test can establish as a reliable precondition". A probe measured the opposite on 2026-09-23: the system accepts the eviction, and the children come back with no allocated blocks while the folder's own flag never moves. The same measurement returned thirty-eight item-level cells which had been refused for it.
+                //
+                // Establishability was never this function's question in any case. `Constraints` prunes what cannot *happen*, and an evicted directory plainly happens — a user drops a synced folder's contents and the folder stays. Whether a given cell's container holds anything to evict at the moment the cell pins it is a property of the harness's build order, not of the system, and it is named and counted by `ScenarioSelection` where the rest of that reasoning already lives.
+                return [.unknown, .dataless, .materialized, .materializedDeep, .evicted]
         }
     }
 
@@ -302,7 +304,9 @@ public enum Constraints {
     ///
     /// The trash axis only varies where something is deleted.
     ///
-    /// Whether the server keeps deleted items is a property of the server profile a run deploys, so crossing it with anything but ``Operation/delete`` would deploy two servers to observe one behaviour. Where it does apply, the value chosen also decides the ``Contract`` the trash oracle is held to, because a server without a trash bin leaves the destination of a deleted item undetermined.
+    /// Whether the server keeps deleted items is only observable through a deletion, so crossing it with any other operation would double the cells of that operation to watch one behaviour that nothing in them touches. Where it does apply, the value chosen also decides the ``Contract`` the trash oracle is held to, because a server without a trash bin leaves the destination of a deleted item undetermined.
+    ///
+    /// The reason given here used to be that the axis is a property of the server profile a run deploys, so crossing it elsewhere would deploy two servers to observe one behaviour. That cost is gone — the trash application is turned off and on per room rather than deployed twice — and the rule survives it, which is worth saying plainly: the axis was never restricted because varying it was expensive, but because a cell that does not delete anything cannot see the difference.
     ///
     /// - Parameters:
     ///     - operation: What is done to the item.

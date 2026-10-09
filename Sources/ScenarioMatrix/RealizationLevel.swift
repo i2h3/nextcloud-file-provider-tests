@@ -48,7 +48,7 @@ public enum RealizationLevel: String, CaseIterable, Hashable, Sendable {
     ///
     /// This case is also the precedent which settles how history enters this model at all. It *is* a two-operation prefix, materialize then evict, collapsed into a single precondition value, and it earns its place because the residue it leaves is a distinguishable state rather than a sequence the matrix would have to replay.
     ///
-    /// It is offered for the item under test only. A container is excluded, because folder eviction aborts non-deterministically on a non-evictable child, and a precondition which cannot be established reliably is not one a cell may rest on.
+    /// It is offered for a container as well as for the item, which it was not until the claim withholding it — that folder eviction aborts non-deterministically on a non-evictable child — was measured and found false. Whether any particular harness can *build* an evicted container is a separate question, and a different kind of question: in the worlds this one builds, a container holds nothing but the item under test, so dropping its contents drops that item and the cell describes a world an evicted item already describes. ``ScenarioSelection`` says so by name and counts them.
     ///
     case evicted
 

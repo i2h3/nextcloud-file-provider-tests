@@ -12,7 +12,7 @@
 ///
 /// A reader who takes a level for the item's state regardless of the operation will establish the wrong precondition and then watch the cell pass for the wrong reason, which is indistinguishable from coverage. So the operation decides which case is emitted, and every consumer asks this type rather than the level.
 ///
-/// The distinction also decides which levels are on offer in the first place: ``Constraints`` answers that separately for an item and for a container, since a container is a directory and a directory cannot be evicted as a reliable precondition.
+/// The distinction also decides which levels are on offer in the first place, and ``Constraints`` answers it separately for an item and for a container. The two lists are now the same, which they were not while a directory was held to be unevictable; what separates them is no longer what the system permits but what a given harness can establish, which is not this model's question to answer.
 ///
 public enum Realization: Hashable, Sendable {
     ///
