@@ -69,6 +69,17 @@ enum ScenarioOracle {
     """
 
     ///
+    /// Why a package's realization cannot be read from the file inside it.
+    ///
+    /// macOS presents a package as **one** File Provider item whose content is the whole tree. Its children are not separately enumerated and carry no realization of their own, so resolving a path through a dataless package faults the entire package in — which means the only way this harness has of reading the inner file's state is also the thing that changes it. Measured on 2026-10-09: the fetch is requested by the lookup, arrives before the client's own package refusal, and leaves the package materialized and the child newly created in the client's database.
+    ///
+    /// So the clause is not merely hard to judge here, it is unobservable by construction: any instrument that reads it destroys the state it was reading. Asserting it reported the harness's own download as a defect of the client, twice, in the run that found this.
+    ///
+    static let packageIsOneItemReason = """
+    A package is one File Provider item whose content is the whole tree, and the file inside it has no realization of its own to read. Resolving a path through a dataless package fetches the package, so the only available instrument is also what changes the state — and what it would then report is the measurement's own doing rather than the client's.
+    """
+
+    ///
     /// Why an evicted item cannot be told from one which was never fetched.
     ///
     static let evictedItemReason = """

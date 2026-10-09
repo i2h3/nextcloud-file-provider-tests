@@ -744,7 +744,7 @@ enum ScenarioWorld {
                     throw ScenarioWorldError.unsupported("an evicted empty folder, because it holds nothing to drop and the state would be indistinguishable from a materialized one")
                 }
 
-                guard kind == .file else {
+                guard kind == .file || kind == .bundle else {
                     // Entered first, so that the children exist to be fetched, and then fetched one level down — the same depth `materializedDeep` reaches, because it is the only depth the system offers.
                     for child in try room.localChildren(of: path) where child.kind == .file {
                         _ = try Materialization.materialize(room.localURL(of: "\(path)/\(child.name)"))
@@ -769,14 +769,32 @@ enum ScenarioWorld {
                     return true
                 }
 
+                // A package takes this path rather than the folder path above, and the run of 2026-10-09 is why. It used to be sent through the folder branch, which lists the package to find files to fetch — and listing is exactly what the system answers by faulting the whole package in, so the eviction was asked for against a package the harness had just downloaded, and `evictUbiquitousItem` refused it. Both cells raised "the system would not accept the eviction it was asked for" on every run.
+                //
+                // macOS presents a package as **one** item whose content is the whole tree, so it is fetched and dropped as one, like a file, and never entered. Whether its own dataless flag moves afterwards is the open question — a plain folder's never does — so the wait below reads that flag and its diagnosis says what it found, which turns an unknown into something the next run answers rather than something this comment has to guess.
                 _ = try Materialization.materialize(url)
 
                 guard Materialization.evict(url) else {
-                    throw ScenarioWorldError.unsupported("an evicted file, because the system would not accept the eviction it was asked for")
+                    throw ScenarioWorldError.unsupported("an evicted \(kind.rawValue), because the system would not accept the eviction it was asked for")
                 }
 
-                try await Waiter.waitUntilBlocking("\"\(url.lastPathComponent)\" settles as evicted", timeout: LiveEnvironment.scaled(.seconds(60))) {
-                    try LocalNode.at(url)?.allocatedBlocks == 0
+                try await Waiter.waitUntilBlocking(
+                    "\"\(url.lastPathComponent)\" settles as evicted",
+                    timeout: LiveEnvironment.scaled(.seconds(60)),
+                    diagnosis: {
+                        guard let node = try? LocalNode.at(url) else {
+                            return "nothing at that path any more"
+                        }
+
+                        return "the item itself reading dataless \(node.isDataless), \(node.allocatedBlocks) allocated blocks"
+                    }
+                ) {
+                    guard kind == .bundle else {
+                        return try LocalNode.at(url)?.allocatedBlocks == 0
+                    }
+
+                    // A package is a directory on disk, so its own allocated blocks say nothing about the content inside it. The flag is the only signal left, and whether the system moves it for a package is what this is measuring.
+                    return try LocalNode.at(url)?.isDataless == true
                 }
 
                 return false

@@ -72,6 +72,14 @@ struct RemoteContentUpdateTests {
                     // The regression the model names. Refreshing an item by fetching it passes every assertion about names, sizes and bytes, and costs a user a download of a file they have never opened.
                     //
                     // Evicted belongs here and used to throw. An evicted file is dataless — the content was fetched and then dropped — and the claim is if anything stronger for it: the user asked for that space back, so re-fetching on a change the user did not make takes it away again.
+                    //
+                    // Asked of a file only. For a package the assertion was reading the file inside it, and reaching that file is what fetches the package — so the clause reported the harness's own download as the client materializing something, which it did twice before anyone checked the logs. Declined by name rather than dropped, because a clause silently missing is indistinguishable from one that passed.
+                    guard cell.item.kind != .bundle else {
+                        ScenarioOracle.decline("realizationState", because: ScenarioOracle.packageIsOneItemReason)
+
+                        break
+                    }
+
                     #expect(node.isDataless, """
                     A content change on the server materialized a file which was \(level.rawValue) before it: it holds \(node.allocatedBlocks) blocks of content now. Updating metadata and version is all this change required.
                     """)
