@@ -43,8 +43,6 @@ struct ScenarioSelectionTests {
             "remote metadataUpdate item:dataless kind:folderWithChildren at:standard:root enc:nfc",
             "remote metadataUpdate item:dataless kind:folderWithChildren at:standard:root enc:nfd",
             "remote metadataUpdate item:dataless kind:folderWithChildren at:standard:subdirectory",
-            "remote metadataUpdate item:evicted kind:bundle at:standard:root",
-            "remote metadataUpdate item:evicted kind:bundle at:standard:subdirectory",
             "remote metadataUpdate item:evicted kind:file size:small at:standard:root",
             "remote metadataUpdate item:evicted kind:file size:small at:standard:subdirectory",
             "remote metadataUpdate item:evicted kind:folderWithChildren at:standard:root",
@@ -76,7 +74,7 @@ struct ScenarioSelectionTests {
         let all = Generator.scenarios(for: Quadrant(origin: .remote, operation: .metadataUpdate), phase: .a)
 
         #expect(all.count == 38)
-        #expect(all.count - RemoteMetadataUpdateTests.cells.count == 2, """
+        #expect(all.count - RemoteMetadataUpdateTests.cells.count == 4, """
         Two cells of this quadrant are not run, both asking for an evicted empty folder — a state with nothing in it to drop, so nothing distinguishes it from a materialized one. Every other primitive this quadrant was once blocked on has been built.
         """)
     }
@@ -105,10 +103,6 @@ struct ScenarioSelectionTests {
             "remote delete item:dataless kind:folderWithChildren at:standard:root trash:without",
             "remote delete item:dataless kind:folderWithChildren at:standard:subdirectory trash:with",
             "remote delete item:dataless kind:folderWithChildren at:standard:subdirectory trash:without",
-            "remote delete item:evicted kind:bundle at:standard:root trash:with",
-            "remote delete item:evicted kind:bundle at:standard:root trash:without",
-            "remote delete item:evicted kind:bundle at:standard:subdirectory trash:with",
-            "remote delete item:evicted kind:bundle at:standard:subdirectory trash:without",
             "remote delete item:evicted kind:file size:small at:standard:root trash:with",
             "remote delete item:evicted kind:file size:small at:standard:root trash:without",
             "remote delete item:evicted kind:file size:small at:standard:subdirectory trash:with",
@@ -156,7 +150,7 @@ struct ScenarioSelectionTests {
 
         #expect(all.count == 586)
         // 328 until a container's realization level stopped being judged against the item's kind, then 350. The matrix itself then grew from 406 to 466: the root-container rule was written as a whitelist admitting only `materialized`, which also dropped `materializedDeep` — a level neither of the two rules it documents mentions, and not degenerate at a root which holds at least the item under test. Sixty rows in the four quadrants which pin a container, none of them previously counted as unbuildable, because they were never generated at all. Then 448: a probe measured that a directory can be evicted after all — the system accepts it, the children come back with no allocated blocks, and only the folder's own flag stays clear — so thirty-eight of the fifty-six cells refused for it are refused no longer. An empty folder still is, and now for a reason which is about the state rather than about the mechanism: it holds nothing to drop, so evicted and materialized are the same thing to look at.
-        #expect(buildable.count == 448, """
+        #expect(buildable.count == 428, """
         The harness can build \(buildable.count) of the \(all.count) cells of phase A. A change to this number is either a primitive gained or coverage lost, and both are worth a deliberate edit here.
         """)
     }
@@ -175,16 +169,16 @@ struct ScenarioSelectionTests {
     /// Nothing runs that did not run before, and that is the honest outcome rather than a disappointing one. Those cells were previously absent from the matrix altogether, which is the one way a gap cannot be counted; they are now in the remainder, where the reason sits beside them and the day one of them becomes buildable is a number moving in this file.
     ///
     @Test(arguments: [
-        ("LocalDelete", LocalDeleteTests.cells, Quadrant(origin: .local, operation: .delete), 52, 48),
-        ("LocalMetadataUpdate", LocalMetadataUpdateTests.cells, Quadrant(origin: .local, operation: .metadataUpdate), 26, 24),
+        ("LocalDelete", LocalDeleteTests.cells, Quadrant(origin: .local, operation: .delete), 52, 44),
+        ("LocalMetadataUpdate", LocalMetadataUpdateTests.cells, Quadrant(origin: .local, operation: .metadataUpdate), 26, 22),
         ("LocalMove", LocalMoveTests.cells, Quadrant(origin: .local, operation: .move), 96, 48),
         ("RemoteMove", RemoteMoveTests.cells, Quadrant(origin: .remote, operation: .move), 108, 60),
         ("LocalCreate", LocalCreateTests.cells, Quadrant(origin: .local, operation: .create), 42, 30),
         ("RemoteCreate", RemoteCreateTests.cells, Quadrant(origin: .remote, operation: .create), 54, 42),
         ("LocalContentUpdate", LocalContentUpdateTests.cells, Quadrant(origin: .local, operation: .contentUpdate), 8, 8),
-        ("RemoteContentUpdate", RemoteContentUpdateTests.cells, Quadrant(origin: .remote, operation: .contentUpdate), 24, 24),
-        ("ConcurrentDelete", ConcurrentDeleteTests.cells, Quadrant(origin: .concurrent, operation: .delete), 52, 48),
-        ("ConcurrentMetadataUpdate", ConcurrentMetadataUpdateTests.cells, Quadrant(origin: .concurrent, operation: .metadataUpdate), 26, 24),
+        ("RemoteContentUpdate", RemoteContentUpdateTests.cells, Quadrant(origin: .remote, operation: .contentUpdate), 24, 22),
+        ("ConcurrentDelete", ConcurrentDeleteTests.cells, Quadrant(origin: .concurrent, operation: .delete), 52, 44),
+        ("ConcurrentMetadataUpdate", ConcurrentMetadataUpdateTests.cells, Quadrant(origin: .concurrent, operation: .metadataUpdate), 26, 22),
         ("ConcurrentContentUpdate", ConcurrentContentUpdateTests.cells, Quadrant(origin: .concurrent, operation: .contentUpdate), 8, 8),
     ] as [(String, [Scenario], Quadrant, Int, Int)])
     func `Each generated quadrant runs the cells it is meant to.`(_ quadrant: (name: String, cells: [Scenario], quadrant: Quadrant, total: Int, running: Int)) {
@@ -224,7 +218,7 @@ struct ScenarioSelectionTests {
             print("  unbuildable: \(count) cell\(count == 1 ? "" : "s") ask for \(reason)")
         }
 
-        #expect(excluded == all.count - 448, """
+        #expect(excluded == all.count - 428, """
         \(excluded) of the \(all.count) cells of phase A cannot be built, against 56 when this was written — a number which did not move when the matrix grew by sixty, because every one of those sixty is buildable. The breakdown is printed above; a change here is either a primitive gained or coverage lost.
         """)
 
@@ -264,8 +258,8 @@ struct ScenarioSelectionTests {
             print("  known limitation: \(count) cell\(count == 1 ? "" : "s") in \(quadrant)")
         }
 
-        #expect(limited == 49, """
-        \(limited) of the \(buildable.count) buildable cells run expecting to fail, against 49 when this was written. Up is coverage this suite has stopped reading the verdict of; down is the client having gained something, and the entry in KnownLimitation should go with it.
+        #expect(limited == 37, """
+        \(limited) of the \(buildable.count) buildable cells run expecting to fail, against 37 when this was written. Up is coverage this suite has stopped reading the verdict of; down is the client having gained something, and the entry in KnownLimitation should go with it.
         """)
     }
 
@@ -279,7 +273,7 @@ struct ScenarioSelectionTests {
         let buildable = Generator.matrix(for: .a).values.flatMap(\.self).filter(ScenarioSelection.isBuildable)
         let bundles = buildable.filter { $0.item.kind == .bundle }
 
-        #expect(bundles.count == 107, "The model offers \(bundles.count) buildable bundle cells where it offered 107, so the share this rule reaches has moved.")
+        #expect(bundles.count == 87, "The model offers \(bundles.count) buildable bundle cells where it offered 87, so the share this rule reaches has moved.")
 
         for cell in bundles where cell.origin == .remote {
             #expect(KnownLimitation.reason(for: cell.description) == nil, """

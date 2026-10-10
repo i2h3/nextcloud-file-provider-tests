@@ -131,7 +131,15 @@ enum ScenarioSelection {
                 case .evicted:
                     // Established by fetching and dropping the content. The two states remain indistinguishable to a test process — the same flag, size and zero blocks — so the cell runs and the distinction alone is declined, rather than the cell being dropped for a clause it cannot judge.
                     //
-                    // A folder with children and a package are established the same way, one level down: the children are fetched and the folder is evicted. That was refused as impossible until a probe measured it on 2026-09-23 — the system accepts the eviction, and the children come back with no allocated blocks while the folder's own flag never moves. Thirty-eight cells were excluded on a claim nobody had tested.
+                    // A folder with children is established the same way, one level down: the children are fetched and the folder is evicted. That was refused as impossible until a probe measured it on 2026-09-23 — the system accepts the eviction, and the children come back with no allocated blocks while the folder's own flag never moves. Thirty-eight cells were excluded on a claim nobody had tested.
+                    //
+                    // A package is the exception, and it is held back on measurement rather than on reasoning. Three routes were tried against client 34.0.5 and every one was refused. Fetching it child by child and evicting the folder: `evictUbiquitousItem` says no, because listing a package to find its children is what faults the whole package in first. Fetching it by reading it, as a file is fetched: EISDIR, since a package is a directory on disk. Fetching it as one item with `startDownloadingUbiquitousItem` and then evicting: sometimes the download never reports content arriving, and when it does the eviction is refused anyway.
+                    //
+                    // Held back by name rather than left to throw, because a world this harness cannot build is a cell it cannot run, and the counted remainder is where that belongs. The day the state becomes establishable the number below moves.
+                    guard subject != .bundle else {
+                        return "an evicted package: macOS presents one as a single item whose content is the whole tree, and every route tried to fetch and then drop that content was refused — by the eviction, by the read, or by the download never completing"
+                    }
+
                     guard subject == .folderEmpty else {
                         continue
                     }
