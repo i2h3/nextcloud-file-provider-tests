@@ -258,8 +258,8 @@ struct ScenarioSelectionTests {
             print("  known limitation: \(count) cell\(count == 1 ? "" : "s") in \(quadrant)")
         }
 
-        #expect(limited == 37, """
-        \(limited) of the \(buildable.count) buildable cells run expecting to fail, against 37 when this was written. Up is coverage this suite has stopped reading the verdict of; down is the client having gained something, and the entry in KnownLimitation should go with it.
+        #expect(limited == 29, """
+        \(limited) of the \(buildable.count) buildable cells run expecting to fail, against 29 when this was written. Up is coverage this suite has stopped reading the verdict of; down is the client having gained something, and the entry in KnownLimitation should go with it.
         """)
     }
 

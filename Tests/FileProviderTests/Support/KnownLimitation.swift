@@ -38,10 +38,19 @@ enum KnownLimitation {
             return nil
         }
 
+        // Narrowed a third time, and again by cells which ran rather than by reasoning. A delete or a rename made on **both** sides at once does not fail, because the client's refusal is not what decides the outcome: the server's half of the operation carries it, and the contract — gone from both, or surviving under one of the permitted names — is satisfied regardless of what the client did with its own half.
+        //
+        // Measured twice, on 2026-10-09 and again on 2026-10-11, identically both times. The four concurrent-delete rooms log the refusal exactly twice each, so the client really does decline the deletion and the item goes anyway. The four concurrent-rename rooms log no refusal at all, which fits what this entry already says works: a package changed on the server reaches the client.
+        //
+        // A concurrent *content* update is not carved out and must not be. Those two cells do fail, and are painted correctly — writing bytes into a package is the upload this client refuses, and no second side is doing it for them.
+        guard !(cell.hasPrefix("concurrent ") && (cell.contains(" delete ") || cell.contains(" metadataUpdate "))) else {
+            return nil
+        }
+
         return """
         The client does not upload packages, deliberately. Its extension says so in its own log — "Refusing to sync bundle or package because this is not supported" — then adds the name to an ignore list and reports the exclusion to the main app over XPC. Measured on 2026-09-17 and 2026-09-18: a package created in the client never reaches the server, a rename of one never leaves the Mac, and deleting one the client has downloaded is dropped. What does work, and is therefore not expected to fail here: a package created on the server arriving in the client, and deleting one the client never downloaded.
 
-        Disabled by https://github.com/nextcloud/desktop/pull/9971; restoring it is tracked by https://github.com/nextcloud/desktop/issues/9827. When it lands, these cells stop failing and this expectation becomes the thing that fails — which is how the suite tells somebody to delete this entry rather than leaving thirty-seven cells quietly untested. That number is measured and pinned by ``ScenarioSelectionTests``, not carried in this sentence, because it was carried here as ninety-three for long enough to be wrong by nearly double.
+        Disabled by https://github.com/nextcloud/desktop/pull/9971; restoring it is tracked by https://github.com/nextcloud/desktop/issues/9827. When it lands, these cells stop failing and this expectation becomes the thing that fails — which is how the suite tells somebody to delete this entry rather than leaving twenty-nine cells quietly untested. That number is measured and pinned by ``ScenarioSelectionTests``, not carried in this sentence, because it was carried here as ninety-three for long enough to be wrong by nearly double.
         """
     }
 }
