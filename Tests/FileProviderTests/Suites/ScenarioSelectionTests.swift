@@ -111,10 +111,6 @@ struct ScenarioSelectionTests {
             "remote delete item:evicted kind:folderWithChildren at:standard:root trash:without",
             "remote delete item:evicted kind:folderWithChildren at:standard:subdirectory trash:with",
             "remote delete item:evicted kind:folderWithChildren at:standard:subdirectory trash:without",
-            "remote delete item:materialized kind:bundle at:standard:root trash:with",
-            "remote delete item:materialized kind:bundle at:standard:root trash:without",
-            "remote delete item:materialized kind:bundle at:standard:subdirectory trash:with",
-            "remote delete item:materialized kind:bundle at:standard:subdirectory trash:without",
             "remote delete item:materialized kind:file size:small at:standard:root trash:with",
             "remote delete item:materialized kind:file size:small at:standard:root trash:without",
             "remote delete item:materialized kind:file size:small at:standard:subdirectory trash:with",
@@ -131,6 +127,10 @@ struct ScenarioSelectionTests {
             "remote delete item:materializedDeep kind:folderWithChildren at:standard:root trash:without",
             "remote delete item:materializedDeep kind:folderWithChildren at:standard:subdirectory trash:with",
             "remote delete item:materializedDeep kind:folderWithChildren at:standard:subdirectory trash:without",
+            "remote delete item:materialized kind:bundle at:standard:root trash:with",
+            "remote delete item:materialized kind:bundle at:standard:root trash:without",
+            "remote delete item:materialized kind:bundle at:standard:subdirectory trash:with",
+            "remote delete item:materialized kind:bundle at:standard:subdirectory trash:without",
         ]
 
         #expect(RemoteDeleteTests.cells.map(\.description) == expected, """
@@ -258,15 +258,17 @@ struct ScenarioSelectionTests {
             print("  known limitation: \(count) cell\(count == 1 ? "" : "s") in \(quadrant)")
         }
 
-        #expect(limited == 29, """
-        \(limited) of the \(buildable.count) buildable cells run expecting to fail, against 29 when this was written. Up is coverage this suite has stopped reading the verdict of; down is the client having gained something, and the entry in KnownLimitation should go with it.
+        #expect(limited == 33, """
+        \(limited) of the \(buildable.count) buildable cells run expecting to fail, against 33 when this was written. Up is coverage this suite has stopped reading the verdict of; down is the client having gained something, and the entry in KnownLimitation should go with it.
         """)
     }
 
     ///
     /// The limitation is scoped to what was measured, and nothing wider.
     ///
-    /// Both carve-outs were cut by a run contradicting the rule, which is the argument for running these cells rather than excluding them, made twice by the suite itself. They are asserted here because they are the difference between a registered limitation and a blanket suppression: without them the rule would paint every bundle cell, including the fifty which pass today, and a real regression in any of them would be read as the packages refusal.
+    /// Every carve-out was cut by a run contradicting the rule, which is the argument for running these cells rather than excluding them, made several times over by the suite itself. They are asserted here because they are the difference between a registered limitation and a blanket suppression: without them the rule would paint every bundle cell, including the fifty-odd which pass today, and a real regression in any of them would be read as the packages refusal.
+    ///
+    /// The server-side carve-out now has an exception of its own — a materialized package the server deletes — so it is asserted as "every remote cell except that one" rather than as "every remote cell". Stating it that way round is deliberate: the exception has to be named here to be allowed, so widening it again in ``KnownLimitation`` without widening it here fails this test rather than passing quietly.
     ///
     @Test
     func `A cell the client is known to handle is not painted as a limitation.`() {
@@ -275,9 +277,25 @@ struct ScenarioSelectionTests {
 
         #expect(bundles.count == 87, "The model offers \(bundles.count) buildable bundle cells where it offered 87, so the share this rule reaches has moved.")
 
-        for cell in bundles where cell.origin == .remote {
+        let deletesAMaterializedPackage: (Scenario) -> Bool = { cell in
+            cell.operation == .delete && cell.description.contains("item:materialized")
+        }
+
+        for cell in bundles where cell.origin == .remote && !deletesAMaterializedPackage(cell) {
             #expect(KnownLimitation.reason(for: cell.description) == nil, """
             "\(cell.description)" is painted as a known limitation, but a package created on the server reaches the client — five cells said so by failing the expectation rather than the cell.
+            """)
+        }
+
+        let painted = bundles.filter { $0.origin == .remote && deletesAMaterializedPackage($0) }
+
+        #expect(painted.count == 4, """
+        \(painted.count) remote cells delete a materialized package where four did, and four is the number two runs measured failing. The exception carved into KnownLimitation is sized to those four and to nothing else.
+        """)
+
+        for cell in painted {
+            #expect(KnownLimitation.reason(for: cell.description) != nil, """
+            "\(cell.description)" is not painted, but two runs on the same client measured the server's deletion of a materialized package never reaching it, against a dataless control which propagated normally.
             """)
         }
 
