@@ -16,13 +16,19 @@ struct MaterializationTests {
     ///
     /// Sizes worth distinguishing: one that fits in anything, one that does not fit in a single request, and nothing at all.
     ///
-    static let sizes = [0, 64 * 1024, 8 * 1024 * 1024]
+    /// Each carries the slug naming what it is for, because the byte count alone does not say it. The slug is what reaches ``CleanRoom`` as the test name, so the run's page says a row tested a chunked transfer rather than saying it tested 8388608, and retuning a number here no longer silently renames a row that means the same thing.
+    ///
+    static let sizes = [
+        (slug: "empty", bytes: 0),
+        (slug: "singleRequest", bytes: 64 * 1024),
+        (slug: "chunked", bytes: 8 * 1024 * 1024),
+    ]
 
     @Test(arguments: LiveEnvironment.servers, sizes)
-    func `A file of any size arrives as a placeholder and materializes with its content intact.`(_ underTest: ServerUnderTest, _ size: Int) async throws {
-        try await CleanRoom.with(underTest, testName: "Materialization.size\(size)") { room in
-            let name = "payload-\(size).bin"
-            let fingerprint = try await ServerWorkspace.withFixture(named: name, size: size, seed: 31) { source, fingerprint in
+    func `A file of any size arrives as a placeholder and materializes with its content intact.`(_ underTest: ServerUnderTest, _ size: (slug: String, bytes: Int)) async throws {
+        try await CleanRoom.with(underTest, testName: "Materialization.\(size.slug)") { room in
+            let name = "payload-\(size.bytes).bin"
+            let fingerprint = try await ServerWorkspace.withFixture(named: name, size: size.bytes, seed: 31) { source, fingerprint in
                 try await room.server.upload(source, to: "/", force: true)
 
                 return fingerprint
@@ -35,23 +41,23 @@ struct MaterializationTests {
             }
 
             let placeholder = try #require(try LocalNode.at(file))
-            #expect(placeholder.size == Int64(size))
+            #expect(placeholder.size == Int64(size.bytes))
 
             // An empty file has nothing to fetch, so the system has no reason to keep it dataless.
-            if size > 0 {
+            if size.bytes > 0 {
                 #expect(placeholder.isDataless, "A file which was never read should not already be on disk.")
                 #expect(placeholder.allocatedBlocks == 0, "A placeholder should occupy no blocks.")
             }
 
             let started = ContinuousClock.now
             let arrived = try Materialization.materialize(file)
-            MetricsRecorder.record("materialization", duration: ContinuousClock.now - started, in: room, test: "Materialization.size\(size)", payloadSize: Int64(size))
+            MetricsRecorder.record("materialization", duration: ContinuousClock.now - started, in: room, test: "Materialization.\(size.slug)", payloadSize: Int64(size.bytes))
 
-            #expect(arrived.count == size)
+            #expect(arrived.count == size.bytes)
             #expect(ContentFactory.fingerprint(of: arrived) == fingerprint)
 
             // An empty file keeps the dataless flag after being read, and reasonably so: there was never anything to fetch, so nothing ever cleared it. Only a file with content proves that reading it brought the content down.
-            if size > 0 {
+            if size.bytes > 0 {
                 #expect(try LocalNode.at(file)?.isDataless == false)
             }
         }

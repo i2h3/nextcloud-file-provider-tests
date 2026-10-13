@@ -16,20 +16,22 @@ import Testing
 @Suite("Naming", .requiresLiveEnvironment, .serialized, .timeLimit(.minutes(10)))
 struct NamingTests {
     ///
-    /// Names which are awkward for one of the two sides, with the reason each one is in the list.
+    /// Names which are awkward for one of the two sides, each carrying the reason it is in the list.
+    ///
+    /// Carried as ``AwkwardName`` rather than as bare strings so that every case says which difficulty it was about. Two of these differ only in how the same letter is encoded and look identical anywhere a reader would meet them — in the test case's display name, in the derived user name, in the clean room directory and on the run's page — so the label is the only thing that tells them apart.
     ///
     static let names = [
-        "Übung.txt", // Precomposed, which is how a server stores it and how macOS does not hand it back.
-        "e\u{0301}clair.txt", // Decomposed at the source, so the server receives what macOS produces.
-        "🌧️ rain.txt", // Outside the basic multilingual plane, and with a variation selector.
-        "ohne-endung", // No extension, which some implementations treat as a directory.
-        "sehr " + String(repeating: "langer", count: 30) + ".txt", // Long, but inside the 255 byte limit of a path component.
+        AwkwardName(label: "precomposed", value: "Übung.txt", why: "precomposed, which is how a server stores a name and how macOS does not hand it back"),
+        AwkwardName(label: "decomposed", value: "e\u{0301}clair.txt", why: "decomposed at the source, so the server receives what macOS produces"),
+        AwkwardName(label: "astral", value: "🌧️ rain.txt", why: "outside the basic multilingual plane, and with a variation selector"),
+        AwkwardName(label: "noextension", value: "ohne-endung", why: "no extension, which some implementations treat as a directory"),
+        AwkwardName(label: "long", value: "sehr " + String(repeating: "langer", count: 30) + ".txt", why: "long, but inside the 255 byte limit of a path component"),
     ]
 
     @Test(arguments: LiveEnvironment.servers, names)
-    func `A name survives the trip from the server into the client.`(_ underTest: ServerUnderTest, _ name: String) async throws {
-        try await CleanRoom.with(underTest, testName: "Naming.fromServer") { room in
-            let fingerprint = try await ServerWorkspace.withFixture(named: name, size: 4096, seed: 41) { source, fingerprint in
+    func `A name survives the trip from the server into the client.`(_ underTest: ServerUnderTest, _ name: AwkwardName) async throws {
+        try await CleanRoom.with(underTest, testName: "Naming.fromServer.\(name.label)") { room in
+            let fingerprint = try await ServerWorkspace.withFixture(named: name.value, size: 4096, seed: 41) { source, fingerprint in
                 try await room.server.upload(source, to: "/", force: true)
 
                 return fingerprint
@@ -72,10 +74,10 @@ struct NamingTests {
     }
 
     @Test(arguments: LiveEnvironment.servers, names)
-    func `A name survives the trip from the client to the server.`(_ underTest: ServerUnderTest, _ name: String) async throws {
-        try await CleanRoom.with(underTest, testName: "Naming.fromClient") { room in
+    func `A name survives the trip from the client to the server.`(_ underTest: ServerUnderTest, _ name: AwkwardName) async throws {
+        try await CleanRoom.with(underTest, testName: "Naming.fromClient.\(name.label)") { room in
             let content = ContentFactory.content(size: 4096, seed: 42)
-            try content.write(to: room.localURL(of: name))
+            try content.write(to: room.localURL(of: name.value))
 
             try await Waiter.poll("the server holds one item", timeout: LiveEnvironment.scaled(.seconds(60))) {
                 try await room.remoteChildren().count == 1
@@ -87,10 +89,10 @@ struct NamingTests {
             // The server's spelling may differ from the one which was written, so the file is fetched by the name the server itself reports.
             #expect(try await room.remoteFingerprint(of: "/\(remote.name)") == ContentFactory.fingerprint(of: content))
 
-            #expect(remote.name == name, "The server spells the name as \(Array(remote.name.unicodeScalars)), which is not the same name as the \(Array(name.unicodeScalars)) which was written.")
+            #expect(remote.name == name.value, "The server spells the name as \(Array(remote.name.unicodeScalars)), which is not the same name as the \(Array(name.value.unicodeScalars)) which was written.")
 
             // The precomposed spelling is what belongs on the wire, and this is the direction where getting it wrong is expensive: a decomposed name stored on the server is handed to every other client of that account, and a Windows or Linux client has no reason to consider it the same file.
-            #expect(Data(remote.name.utf8) == Data(name.precomposedStringWithCanonicalMapping.utf8), "The client is expected to upload the precomposed spelling of \(Array(name.unicodeScalars)), but the server stored \(Array(remote.name.unicodeScalars)).")
+            #expect(Data(remote.name.utf8) == Data(name.value.precomposedStringWithCanonicalMapping.utf8), "The client is expected to upload the precomposed spelling of \(Array(name.value.unicodeScalars)), but the server stored \(Array(remote.name.unicodeScalars)).")
         }
     }
 
