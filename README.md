@@ -382,7 +382,16 @@ The directory holds:
 - `index.html` — the run's front page, and the one artifact meant to be read rather than parsed. One
   row per cell, grouped by quadrant, each saying in a sentence what the cell did and how it went, with
   the technical identifier underneath as a footnote and a link into that cell's logs. Outcomes have a
-  legend, because *no measurement* means nothing to anyone who did not write it. What a cell saw but
+  legend, because *no measurement* means nothing to anyone who did not write it. Above the rows is a
+  heat map — one square per cell, the whole run on one screen, grouped and ordered exactly as the
+  sections below are, so a column of red says an axis is broken in a way no amount of scrolling would
+  have said. Each square links to its row, and the four outcomes differ in fill, stripe and border as
+  well as in colour, so the pattern survives a greyscale print. Beside it a filter narrows both the
+  map and the rows to one outcome; a quadrant none of whose cells match collapses to its heading and
+  a count rather than disappearing, because a section which is not on the page cannot be told from a
+  quadrant which never ran — and under a filter those headings reading zero are the finding. The line
+  beside the control says how much of the run is on screen. Without JavaScript the control does
+  nothing and every cell stays visible. What a cell saw but
   was not entitled to assert — which name a colliding pair settled on, which version won a conflict —
   appears beneath its row, on passing cells as much as failing ones, and what the run could not judge
   at all is listed once at the end under *Not judged* — a cell above may have passed without any of

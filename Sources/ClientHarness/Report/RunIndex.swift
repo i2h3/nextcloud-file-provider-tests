@@ -39,17 +39,25 @@ public enum RunIndex {
         let failuresByRoom = attribute(evidence)
         let quadrants = group(rooms)
 
+        let reached = verdicts(rooms: rooms, failures: failuresByRoom, samples: samples)
+        let ordered = quadrants.sorted { $0.key < $1.key }
+
+        // No cell description carries a server, so a run which deployed more than one writes every label on the page twice — generated cells included. Asked of the rooms rather than of the manifest, because a run whose manifest is missing still has to be readable.
+        let namesServer = Set(rooms.map(\.server.tag)).count > 1
+
         var html = header(evidence)
 
         html += summary(rooms: rooms, failures: evidence.failures, quadrants: quadrants, samples: samples)
+        html += heatMap(ordered, verdicts: reached, namesServer: namesServer)
 
-        for (quadrant, members) in quadrants.sorted(by: { $0.key < $1.key }) {
-            html += section(quadrant, rooms: members, failures: failuresByRoom, samples: samples, observations: seen.byRoom)
+        for (quadrant, members) in ordered {
+            html += section(quadrant, rooms: members, failures: failuresByRoom, samples: samples, observations: seen.byRoom, verdicts: reached, namesServer: namesServer)
         }
 
         html += notJudged(seen.run)
         html += unattributed(evidence.failures, attributed: failuresByRoom)
         html += footer(evidence)
+        html += script(total: rooms.count, quadrants: ordered.count)
 
         return html
     }
@@ -224,6 +232,36 @@ public enum RunIndex {
         .declines { color: var(--dim); font-size: 13.5px; margin: .4rem 0 0; padding-left: 1.1rem; }
         .declines li { margin: .3rem 0; }
         tr.failed td { background: color-mix(in srgb, var(--fail) 8%, transparent); }
+        tr:target td { background: color-mix(in srgb, var(--accent) 14%, transparent); }
+        .controls { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; margin: .6rem 0 1rem; }
+        .controls label { color: var(--dim); font-size: 12px; text-transform: uppercase; letter-spacing: .04em; font-weight: 600; }
+        .controls select { font: inherit; font-size: 13px; padding: .25rem .5rem; border-radius: 8px;
+                           border: 1px solid var(--line); background: var(--panel); color: var(--ink); }
+        .controls .why { margin: 0; }
+        .map { display: flex; flex-wrap: wrap; gap: .85rem 1.2rem; margin: 0 0 1.5rem; }
+        .group { width: calc(12 * 12px + 11 * 2px); }
+        .group h3 { margin: 0 0 .3rem; font-size: 11px; font-weight: 600; color: var(--dim);
+                    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .squares { display: grid; grid-template-columns: repeat(12, 12px); gap: 2px; }
+        .sq { display: block; width: 12px; height: 12px; border-radius: 2px; border: 1px solid var(--dim); position: relative; }
+        .sq span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+        .sq[data-outcome="passed"] { background: var(--pass); }
+        .sq[data-outcome="failed"] { background: var(--fail); }
+        .sq[data-outcome="known-limitation"] { background: repeating-linear-gradient(45deg, var(--skip), var(--skip) 3px, var(--panel) 3px, var(--panel) 6px); }
+        .sq[data-outcome="not-measured"] { background: var(--panel); border-style: dashed; }
+        .sq:hover, .sq:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; z-index: 1; }
+        section.quadrant[hidden] { display: none; }
+        \(filterRules())
+        .sq em { display: none; font-style: normal; font-size: 8px; line-height: 10px; text-align: center; color: var(--bg); }
+        .sq[data-outcome="failed"] em, .sq[data-outcome="known-limitation"] em { display: block; }
+        section.quadrant.empty table { display: none; }
+        section.quadrant.empty h2 { opacity: .45; }
+        @media (forced-colors: active) { .sq { forced-color-adjust: none; border-color: CanvasText; } .sq em { display: block; color: CanvasText; } }
+        @media print {
+            .controls { display: none; }
+            .sq { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+            .sq em { display: block; }
+        }
         @media (max-width: 600px) { body { padding: 1rem .75rem 3rem; } .facts th { width: auto; } }
         </style></head><body><main>
         <h1>Nextcloud File Provider Tests</h1>
@@ -425,7 +463,7 @@ public enum RunIndex {
     ///
     /// - Returns: The markup.
     ///
-    static func section(_ quadrant: String, rooms: [RoomManifest], failures: [String: [ReportedFailure]], samples: [String: [LatencySample]], observations: [String: [Observation]]) -> String {
+    static func section(_ quadrant: String, rooms: [RoomManifest], failures: [String: [ReportedFailure]], samples: [String: [LatencySample]], observations: [String: [Observation]], verdicts: [String: CellOutcome], namesServer: Bool) -> String {
         var rows = ""
 
         for room in rooms {
@@ -433,16 +471,9 @@ public enum RunIndex {
             let cell = room.cell ?? room.testName
             let taken = samples[cell]?.compactMap(\.duration).max()
 
-            // A known issue is not a failure and must not be shown as one. It is a cell whose subject declines the feature, running deliberately so that the day it stops failing somebody is told — a red row would train a reader to ignore exactly the rows which will one day mean something.
-            let isExpected = !mine.isEmpty && mine.allSatisfy(\.isKnown)
-
-            let status: String = if mine.isEmpty {
-                taken == nil ? "<span class=\"meh\">no measurement</span>" : "<span class=\"ok\">passed</span>"
-            } else if isExpected {
-                "<span class=\"meh\">known limitation</span>"
-            } else {
-                "<span class=\"bad\">failed</span>"
-            }
+            // Read rather than decided here, so that the row and its square in the heat map cannot disagree. ``CellOutcome`` carries the rule, including the part worth stating twice: a known issue is not a failure, because a red row would train a reader to ignore exactly the rows which will one day mean something.
+            let outcome = verdicts[room.user] ?? .notMeasured
+            let status = "<span class=\"\(outcome.emphasis)\">\(outcome.label)</span>"
 
             var detail = mine.map { "<p class=\"why\">\(escape($0.message))</p>" }.joined()
 
@@ -451,8 +482,8 @@ public enum RunIndex {
             let elapsed = room.endedAt.map { $0.timeIntervalSince(room.startedAt) }
 
             rows += """
-            <tr class="\(mine.isEmpty || isExpected ? "" : "failed")">
-            <td><span class="what">\(escape(CellPhrase.sentence(for: cell)))</span><span class="exact">\(escape(cell))</span>\(detail)</td>
+            <tr id="\(escape(anchor(of: room)))" data-outcome="\(outcome.rawValue)" class="cell\(outcome == .failed ? " failed" : "")">
+            <td><span class="what">\(escape(headline(of: room)))</span><span class="exact">\(escape(identity(of: room, namesServer: namesServer)))</span>\(detail)</td>
             <td>\(status)</td>
             <td class="num">\(taken.map { format($0) } ?? "—")</td>
             <td class="num">\(elapsed.map { String(format: "%.0f s", $0) } ?? "—")</td>
@@ -461,20 +492,17 @@ public enum RunIndex {
             """
         }
 
-        let broken = rooms.filter { room in
-            let mine = failures[room.user] ?? []
-
-            return !mine.isEmpty && !mine.allSatisfy(\.isKnown)
-        }
-        .count
+        let broken = rooms.filter { verdicts[$0.user] == .failed }.count
 
         // Wall-clock across the quadrant's rooms, which is what a reader is deciding about when they wonder whether to run it again. Building a room dominates it — a cell's own operation is usually under a second — so this is mostly the price of isolation, and saying so is the point.
         let spent = rooms.compactMap { room in room.endedAt.map { $0.timeIntervalSince(room.startedAt) } }.reduce(0, +)
 
         return """
-        <h2>\(escape(CellPhrase.heading(for: quadrant))) <span class="pill">\(rooms.count) cells</span> <span class="pill">\(compact(spent))</span>\(broken > 0 ? " <span class=\"pill bad\">\(broken) failed</span>" : "")</h2>
+        <section class="quadrant" data-quadrant="\(escape(quadrant))">
+        <h2>\(escape(CellPhrase.heading(for: quadrant))) <span class="pill shown" data-total="\(rooms.count)">\(rooms.count) cells</span> <span class="pill">\(compact(spent))</span>\(broken > 0 ? " <span class=\"pill bad\">\(broken) failed</span>" : "")</h2>
         <table><thead><tr><th>Cell</th><th>Outcome</th><th class="num">Propagated in</th><th class="num">Room took</th><th>Evidence</th></tr></thead>
         <tbody>\(rows)</tbody></table>
+        </section>
         """
     }
 
@@ -525,6 +553,250 @@ public enum RunIndex {
         <tr><th>Drafted reports</th><td>reports/ — unfiled drafts, never findings on their own</td></tr>
         <tr><th>The run itself</th><td>run.json — machine, client, preflight, servers, flags</td></tr>
         </table>
+        """
+    }
+
+    ///
+    /// What the run concluded about each room, by user.
+    ///
+    /// Computed once and handed to everything which draws it. The heat map and the table state the same verdict about the same cell, and the only way to keep them from drifting is for neither of them to work it out.
+    ///
+    /// - Parameters:
+    ///     - rooms: The rooms of the run.
+    ///     - failures: The failures of each room, by user.
+    ///     - samples: The measurements, by cell.
+    ///
+    /// - Returns: The outcome of each room, by user.
+    ///
+    static func verdicts(rooms: [RoomManifest], failures: [String: [ReportedFailure]], samples: [String: [LatencySample]]) -> [String: CellOutcome] {
+        var reached = [String: CellOutcome]()
+
+        for room in rooms {
+            let cell = room.cell ?? room.testName
+            let measured = samples[cell]?.compactMap(\.duration).max() != nil
+
+            reached[room.user] = CellOutcome.of(failures: failures[room.user] ?? [], wasMeasured: measured)
+        }
+
+        return reached
+    }
+
+    ///
+    /// The exact identifier beneath a row, and the caption of its square.
+    ///
+    /// The cell where there is one, the test name where there is not, and the server beside it where the run deployed more than one.
+    ///
+    /// That last part is not cosmetic. Every live suite is parameterized over the servers under test, and no cell description carries a server token, so a run against a release and its predecessor writes every label on this page twice — the generated cells included — with nothing to say which half is which. It is also the axis a reader cares about most, because a defect which appears on one release and not the other is the whole reason the matrix has two.
+    ///
+    /// - Parameters:
+    ///     - room: The room.
+    ///     - namesServer: Whether the run deployed more than one server.
+    ///
+    /// - Returns: The identifier.
+    ///
+    static func identity(of room: RoomManifest, namesServer: Bool) -> String {
+        let cell = room.cell ?? room.testName
+
+        guard namesServer else {
+            return cell
+        }
+
+        return "\(cell) · \(room.server.tag)"
+    }
+
+    ///
+    /// The rules which hide what the filter is not asking for.
+    ///
+    /// Generated from ``CellOutcome/allCases`` rather than written out, so that a fifth outcome cannot reach the control without reaching the rules — an option which selects a value no rule matches empties the page and reads as a run of nothing.
+    ///
+    /// The selector is `tr.cell` and not `tbody tr`, which is the lesson this function exists to keep. The wider selector was shipped and it hid every row of the machine facts, of the legend which defines the four words the page is about, and of the table saying what else is in the directory — fourteen rows and five rows of content, deleted by choosing an option. A browser puts a bare `<tr>` into an implicit `<tbody>`, so "a row with no outcome" is every row on the page.
+    ///
+    /// - Returns: The rules.
+    ///
+    static func filterRules() -> String {
+        CellOutcome.allCases
+            .map { outcome in
+                """
+                body[data-filter="\(outcome.rawValue)"] tr.cell:not([data-outcome="\(outcome.rawValue)"]) { display: none; }
+                body[data-filter="\(outcome.rawValue)"] .sq:not([data-outcome="\(outcome.rawValue)"]) { opacity: .14; }
+                """
+            }
+            .joined(separator: "\n")
+    }
+
+    ///
+    /// The sentence at the top of a row.
+    ///
+    /// A generated cell is phrased from its description, because the description names every axis and the suite's own display name is shared by every row of the quadrant.
+    ///
+    /// A hand-written one is the other way round, and this used to take the worse of the two. Those rooms have no cell, so the identifier was de-camel-cased and shown as the sentence — "Client to server atomic save" above "ClientToServer.atomicSave", the same words twice — while the room manifest already carried the sentence the suite's author wrote: "A file written the way applications write it arrives intact." It was being read for failures outside any room and nowhere else.
+    ///
+    /// - Parameters:
+    ///     - room: The room.
+    ///
+    /// - Returns: The sentence.
+    ///
+    static func headline(of room: RoomManifest) -> String {
+        guard let cell = room.cell else {
+            return room.testDisplayName ?? CellPhrase.sentence(for: room.testName)
+        }
+
+        return CellPhrase.sentence(for: cell)
+    }
+
+    ///
+    /// The identifier a square links to and a row answers on.
+    ///
+    /// Derived from the room's user, which is the one thing in a run that is unique per cell by construction — ``TestUserName/derive(from:ordinal:)`` makes it so in order that two runs of one parameterized test cannot share a File Provider domain.
+    ///
+    /// It is read back with `getElementById` rather than `querySelector`, because a user name carries full stops and a CSS selector would read those as class names.
+    ///
+    /// - Parameters:
+    ///     - room: The room.
+    ///
+    /// - Returns: The identifier.
+    ///
+    static func anchor(of room: RoomManifest) -> String {
+        "cell-\(room.user)"
+    }
+
+    ///
+    /// Every cell of the run as one square, above the sections which describe them.
+    ///
+    /// A run is four hundred rows long and the question a reader opens it with — did this go well, and if not, where — is not a question four hundred rows answer. The squares answer it in one screen, keep the matrix's shape while they do it, and each one is a link to the row that says more.
+    ///
+    /// Grouped by quadrant and ordered within a group exactly as the section below orders its rows, so the nth square is the nth row. That correspondence is the whole reason the map is worth looking at: a column of red in one group says an axis value is broken, which no amount of scrolling would have said.
+    ///
+    /// The outcome is on each square as a data attribute rather than only as a colour, which is what lets the filter act on the map and the table through one rule, and what lets a reader who cannot separate the hues still get the pattern — the four outcomes differ in fill, in stripe and in border as well as in colour.
+    ///
+    /// - Parameters:
+    ///     - quadrants: The rooms grouped, in the order the sections will take them.
+    ///     - verdicts: The outcome of each room, by user.
+    ///
+    /// - Returns: The markup.
+    ///
+    static func heatMap(_ quadrants: [(key: String, value: [RoomManifest])], verdicts: [String: CellOutcome], namesServer: Bool) -> String {
+        guard !quadrants.isEmpty else {
+            return ""
+        }
+
+        var counts = [CellOutcome: Int]()
+        var groups = ""
+
+        for (quadrant, rooms) in quadrants {
+            var squares = ""
+
+            for room in rooms {
+                let outcome = verdicts[room.user] ?? .notMeasured
+                let caption = "\(identity(of: room, namesServer: namesServer)) — \(outcome.label)"
+
+                counts[outcome, default: 0] += 1
+                squares += "<a class=\"sq\" data-outcome=\"\(outcome.rawValue)\" href=\"#\(escape(anchor(of: room)))\" title=\"\(escape(caption))\"><em>\(escape(outcome.mark))</em><span>\(escape(caption))</span></a>"
+            }
+
+            // The heading the section below carries, with the raw key behind it. It was the other way round, which meant a block could not be matched to its section by eye.
+            groups += "<div class=\"group\"><h3 title=\"\(escape(quadrant))\">\(escape(CellPhrase.heading(for: quadrant)))</h3><div class=\"squares\">\(squares)</div></div>"
+        }
+
+        let total = quadrants.reduce(0) { $0 + $1.value.count }
+        var options = "<option value=\"\">every cell (\(total))</option>"
+
+        // Only the outcomes this run actually produced. An option which matches nothing would empty the page and read as though the run had been empty.
+        for outcome in CellOutcome.allCases where counts[outcome, default: 0] > 0 {
+            options += "<option value=\"\(outcome.rawValue)\">\(outcome.label) (\(counts[outcome, default: 0]))</option>"
+        }
+
+        return """
+        <h2>Every cell at once</h2>
+        <p class="why">One square per cell, grouped by quadrant and ordered exactly as the sections below order their rows. Click one to jump to what it says. The filter narrows the sections too, and a quadrant none of whose cells match collapses to its heading and a count rather than vanishing, because a section which is not on the page cannot be told from a quadrant which never ran.</p>
+        <div class="controls"><label for="outcome">Show</label><select id="outcome">\(options)</select><span id="shown" class="why"></span></div>
+        <div class="map">\(groups)</div>
+        """
+    }
+
+    ///
+    /// The filter, and the end of the document.
+    ///
+    /// Vanilla and inline, because this page is zipped and sent to people who will not serve it, let alone build it. It does as little as it can: the hiding itself is a CSS rule keyed on one attribute of `body`, so filtering four hundred rows is one attribute write rather than four hundred style writes.
+    ///
+    /// What it cannot leave to CSS is the part a reader would otherwise misread. A quadrant none of whose cells match collapses to its heading and a count rather than disappearing — an absent section is indistinguishable from a quadrant which did not run, which is the same objection this project makes to excluding cells, and under a filter those headings reading zero are themselves the finding. The count beside each heading keeps its denominator, so it reads "one of eight cells" rather than "one cell", and the line beside the control says how much of the run is on screen whether or not anything is filtered.
+    ///
+    /// Without JavaScript the control does nothing and every cell stays visible, which is the right way round.
+    ///
+    /// - Parameters:
+    ///     - total: How many cells the run has.
+    ///     - quadrants: How many quadrants they fall into.
+    ///
+    /// - Returns: The markup.
+    ///
+    static func script(total: Int, quadrants: Int) -> String {
+        """
+        <script>
+        (function () {
+            var select = document.getElementById('outcome');
+            var shown = document.getElementById('shown');
+
+            if (!select) { return; }
+
+            var sections = Array.prototype.slice.call(document.querySelectorAll('section.quadrant'));
+
+            function apply() {
+                var want = select.value;
+                var cells = 0;
+                var groups = 0;
+
+                document.body.setAttribute('data-filter', want);
+
+                for (var i = 0; i < sections.length; i++) {
+                    var rows = sections[i].querySelectorAll('tr.cell');
+                    var matched = 0;
+
+                    for (var j = 0; j < rows.length; j++) {
+                        if (!want || rows[j].getAttribute('data-outcome') === want) { matched++; }
+                    }
+
+                    // Collapsed rather than hidden. A section which is not on the page is indistinguishable from a quadrant which did not run, and under a filter the headings reading zero are the finding.
+                    sections[i].classList.toggle('empty', matched === 0);
+                    cells += matched;
+
+                    if (matched > 0) { groups++; }
+
+                    var pill = sections[i].querySelector('.pill.shown');
+
+                    if (pill) {
+                        var total = pill.getAttribute('data-total');
+                        pill.textContent = want ? matched + ' of ' + total + ' cells' : total + (total === '1' ? ' cell' : ' cells');
+                    }
+                }
+
+                shown.textContent = want
+                    ? cells + ' of \(total) cells, in ' + groups + ' of \(quadrants) quadrants'
+                    : '\(total) cells in \(quadrants) quadrants';
+            }
+
+            // A row the filter is hiding cannot be jumped to, so anything addressing one clears the filter first. That covers a square clicked while filtered and a #cell- link opened in a browser which restored the previous selection.
+            function reveal(identifier) {
+                var row = identifier ? document.getElementById(identifier) : null;
+
+                if (!row || !select.value || row.getAttribute('data-outcome') === select.value) { return; }
+
+                select.value = '';
+                apply();
+                row.scrollIntoView();
+            }
+
+            select.addEventListener('change', apply);
+
+            document.addEventListener('click', function (event) {
+                var square = event.target.closest ? event.target.closest('a.sq') : null;
+
+                if (square) { reveal(square.getAttribute('href').slice(1)); }
+            });
+
+            apply();
+            reveal(location.hash.slice(1));
+        })();
+        </script>
         </main></body></html>
         """
     }

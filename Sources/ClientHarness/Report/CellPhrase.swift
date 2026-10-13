@@ -47,6 +47,11 @@ public enum CellPhrase {
             phrase += " \(where_)"
         }
 
+        // Printed because leaving it out made four materially different client behaviours read as one sentence. The encoding axis is what the whole hand-written naming suite is about, and until this clause existed a cell renaming an item onto a sibling's name in another case was indistinguishable on the page from a plain rename — including the four such cells which failed in the run of 2026-10-11.
+        if let encoding = attributes["enc"], let spelled = encodings[encoding] {
+            phrase += " \(spelled)"
+        }
+
         if let trash = attributes["trash"] {
             phrase += ", with Nextcloud server trash \(trash == "with" ? "enabled" : "disabled")"
         }
@@ -106,6 +111,30 @@ public enum CellPhrase {
         "folderEmpty": "empty folder",
         "folderWithChildren": "non-empty folder",
         "bundle": "bundle",
+    ]
+
+    ///
+    /// How the name is spelled, where the cell varies that.
+    ///
+    /// Three ways for two systems to disagree about what a name is, and the reason ``ScenarioMatrix/FilenameEncoding`` is an axis at all. A cell which carries none of these uses a plain ASCII name and says nothing here.
+    ///
+    static let encodings = [
+        "nfc": "under a precomposed name",
+        "nfd": "under a decomposed name",
+        "caseCollision": "under a name a sibling already holds in another case",
+    ]
+
+    ///
+    /// What the client knew of a container when the cell pinned it.
+    ///
+    /// Kept apart from ``levels``, which names a state, because this is a clause about a folder and reads in a sentence. The distinction worth keeping is the last two: a container which was enumerated and one whose contents were fetched as well are separate cells of the model, and a phrase which calls both of them "enumerated" makes them one row.
+    ///
+    static let knowledge = [
+        "unknown": "the client did not know",
+        "dataless": "the client had never enumerated",
+        "materialized": "the client had enumerated",
+        "materializedDeep": "the client had enumerated along with its contents",
+        "evicted": "the client had enumerated and then dropped",
     ]
 
     ///
@@ -178,12 +207,20 @@ public enum CellPhrase {
     static func container(_ placement: String, level: String?) -> String {
         let place = places[placement.components(separatedBy: ":").last ?? ""] ?? "an unknown container"
 
-        // The domain root is enumerated the moment the domain mounts, so its state is never in question and saying anything about it would be noise.
-        guard place != places["root"], let level, let described = levels[level] else {
+        guard let level else {
             return place
         }
 
-        return described == "dataless" ? "\(place) the client had never enumerated" : "\(place) the client had enumerated"
+        // The domain root is enumerated the moment the domain mounts, so saying that it was is noise — but saying nothing at all was worse. The model emits a shallow root and a deep one as separate cells, and while this said nothing about either, those two read as one sentence: a hundred and forty-four of the run's four hundred and sixty-one rows had a root container's level as part of what distinguished them.
+        guard place != places["root"] else {
+            return level == "materializedDeep" ? "\(place), with its contents fetched" : place
+        }
+
+        guard let described = knowledge[level] else {
+            return place
+        }
+
+        return "\(place) \(described)"
     }
 
     ///
